@@ -9,7 +9,7 @@ Three toolbar switches, all on after install:
 | Switch | When on |
 | --- | --- |
 | **Block For you** | Home opens on Following and the For you tab is removed. |
-| **Block Reels** | The Reels viewer and its sidebar entry leave for home. Single reels, profile reels, and reel posts in the Following feed still work. |
+| **Block Reels** | The Reels tab leaves for home and its sidebar icon is hidden. Single reels, profile reels, in-feed reels, and reel posts in the Following feed still work. |
 | **Block Explore contents** | Explore stays open for search and account results; recommendation grids stay hidden. |
 
 Messages, profiles, and individual posts stay available under every combination of the switches. Access is limited to Instagram; switch state is stored locally in the browser.

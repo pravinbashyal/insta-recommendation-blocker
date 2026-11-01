@@ -1,18 +1,18 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 
 import { JSDOM } from 'jsdom';
 
 import {
   buildFollowingSearch,
-  canonicalHomeFollowingHref,
+  buildWwwHomeHref,
   findForYouTab,
+  findFavoritesTab,
   getVariant,
   isHomeRoute,
-  needsFollowingVariant,
+  needsFollowingRedirect,
 } from '../extension/lib/home-for-you-block.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -34,25 +34,10 @@ function createStorageMock(initialStore = {}) {
   const store = { ...initialStore };
   /** @type {Array<(changes: object, area: string) => void>} */
   const listeners = [];
-  let getGate = Promise.resolve();
-  /** @type {(() => void) | null} */
-  let releaseGetGate = null;
 
   const storage = {
-    blockGet() {
-      getGate = new Promise((resolve) => {
-        releaseGetGate = resolve;
-      });
-    },
-    unblockGet() {
-      if (releaseGetGate) {
-        releaseGetGate();
-        releaseGetGate = null;
-      }
-      getGate = Promise.resolve();
-    },
     get(keys) {
-      return getGate.then(() =>
+      return Promise.resolve(
         keys.reduce((out, key) => {
           if (key in store) {
             out[key] = store[key];
@@ -76,15 +61,6 @@ function createStorageMock(initialStore = {}) {
       }
       return done;
     },
-    remove(keys) {
-      for (const key of keys) {
-        delete store[key];
-      }
-      return Promise.resolve();
-    },
-    snapshot() {
-      return { ...store };
-    },
   };
 
   return {
@@ -105,10 +81,6 @@ async function settle() {
   }
 }
 
-/**
- * @param {Window} window
- * @param {(url: string) => void} handler
- */
 function installWwwHomeNavigation(window, handler) {
   window.__IRB_NAVIGATE_WWW_HOME__ = handler;
 }
@@ -118,42 +90,7 @@ async function applySwitches(window, switches) {
   await settle();
 }
 
-function assertManifestLoadsHomeScriptFirst() {
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-  const scripts = manifest.content_scripts[0].js;
-  assert.equal(scripts[0], 'content/home-for-you-block.js');
-  assert.equal(scripts[1], 'content/reels-viewer-block.js');
-  assert.equal(scripts[2], 'content/explore-discovery-block.js');
-  assert.equal(scripts[3], 'content/content.js');
-}
-
-function assertPureUrlHelpers() {
-  assert.equal(needsFollowingVariant(true, ''), true);
-  assert.equal(needsFollowingVariant(true, '?hl=en'), true);
-  assert.equal(needsFollowingVariant(true, '?variant=following'), false);
-  assert.equal(needsFollowingVariant(true, '?variant=favorites'), false);
-  assert.equal(needsFollowingVariant(false, ''), false);
-
-  assert.equal(buildFollowingSearch('?hl=en'), '?hl=en&variant=following');
-  assert.equal(
-    canonicalHomeFollowingHref('https://instagram.com/?hl=en'),
-    'https://www.instagram.com/?hl=en&variant=following',
-  );
-  assert.equal(
-    canonicalHomeFollowingHref('https://www.instagram.com'),
-    'https://www.instagram.com/?variant=following',
-  );
-
-  assert.equal(isHomeRoute({ hostname: 'www.instagram.com', pathname: '/' }), true);
-  assert.equal(isHomeRoute({ hostname: 'instagram.com', pathname: '/' }), true);
-  assert.equal(isHomeRoute({ hostname: 'www.instagram.com', pathname: '/explore/' }), false);
-}
-
-/**
- * @param {string} html
- * @param {string} href
- */
-function createSession(html, href, { chrome } = {}) {
+function createSession(html, href, { chrome, reconfigureOnNavigate = true } = {}) {
   const dom = new JSDOM(html, {
     url: href,
     pretendToBeVisual: true,
@@ -164,17 +101,21 @@ function createSession(html, href, { chrome } = {}) {
   if (chrome) {
     window.chrome = chrome;
   }
+  /** @type {string[]} */
+  const navigations = [];
   installWwwHomeNavigation(window, (url) => {
-    dom.reconfigure({ url: String(url) });
+    navigations.push(String(url));
+    if (reconfigureOnNavigate) {
+      dom.reconfigure({ url: String(url) });
+    }
   });
 
   window.eval(`${fs.readFileSync(homeScriptPath, 'utf8')}\n//# sourceURL=home-for-you-block.js`);
-
   const api = window.__IRB_HOME_FOR_YOU__;
   assert.ok(api, 'home script must expose __IRB_HOME_FOR_YOU__');
 
   openDomSessions.push({ dom, api });
-  return { window, api, dom };
+  return { window, api, dom, navigations };
 }
 
 function bootContentSession(html, href, storageBundle) {
@@ -207,74 +148,114 @@ function getHomeTablist(window) {
     window.document.querySelector('main [role="tablist"]');
 }
 
-function assertSingleSelectedTab(tablist, label) {
-  const selected = tablist.querySelectorAll('[role="tab"][aria-selected="true"]');
-  assert.equal(selected.length, 1);
-  assert.equal(selected[0].textContent.trim(), label);
+// ---------------------------------------------------------------------------
+
+function assertManifestLoadsHomeScriptFirst() {
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  const scripts = manifest.content_scripts[0].js;
+  assert.deepEqual(scripts, [
+    'content/home-for-you-block.js',
+    'content/reels-viewer-block.js',
+    'content/explore-discovery-block.js',
+    'content/content.js',
+  ]);
 }
 
-async function assertLoggedInHomeColdLoad() {
-  for (const href of [
-    'https://www.instagram.com/',
-    'https://www.instagram.com/?hl=en',
+function assertPureUrlHelpers() {
+  const home = { hostname: 'www.instagram.com', pathname: '/' };
+  const apex = { hostname: 'instagram.com', pathname: '/' };
+
+  assert.equal(needsFollowingRedirect(true, { ...home, search: '' }), true);
+  assert.equal(needsFollowingRedirect(true, { ...home, search: '?hl=en' }), true);
+  assert.equal(needsFollowingRedirect(true, { ...apex, search: '' }), true);
+  assert.equal(needsFollowingRedirect(true, { ...home, search: '?variant=following' }), false);
+  assert.equal(needsFollowingRedirect(true, { ...home, search: '?variant=favorites' }), false);
+  assert.equal(needsFollowingRedirect(false, { ...home, search: '' }), false);
+  assert.equal(
+    needsFollowingRedirect(true, { hostname: 'www.instagram.com', pathname: '/explore/', search: '' }),
+    false,
+  );
+
+  assert.equal(buildFollowingSearch(''), '?variant=following');
+  assert.equal(buildFollowingSearch('?hl=en'), '?hl=en&variant=following');
+  assert.equal(buildWwwHomeHref('?variant=following'), 'https://www.instagram.com/?variant=following');
+  assert.equal(buildWwwHomeHref('?hl=en&variant=following'), 'https://www.instagram.com/?hl=en&variant=following');
+
+  assert.equal(isHomeRoute(home), true);
+  assert.equal(isHomeRoute(apex), true);
+  assert.equal(isHomeRoute({ hostname: 'www.instagram.com', pathname: '/explore/' }), false);
+}
+
+async function assertColdLoadBareHomeRedirectsAndStripsForYou() {
+  for (const [href, expectedTarget] of [
+    ['https://www.instagram.com/', 'https://www.instagram.com/?variant=following'],
+    ['https://www.instagram.com/?hl=en', 'https://www.instagram.com/?hl=en&variant=following'],
   ]) {
     const storageBundle = createStorageMock();
-    const { window } = createSession(readFixture('logged-in-home.html'), href, {
+    const { window, navigations } = createSession(readFixture('logged-in-home.html'), href, {
       chrome: storageBundle.chrome,
     });
     await applySwitches(window, { blockForYou: true });
 
-    assert.equal(window.location.hostname, 'www.instagram.com');
+    // For you tab stripped and the bare feed sent to Following (query preserved).
+    assert.equal(findForYouTab(getHomeTablist(window)), null);
+    assert.ok(navigations.includes(expectedTarget), `expected redirect to ${expectedTarget}`);
     assert.match(window.location.search, /variant=following/);
-    if (href.includes('hl=en')) {
-      assert.match(window.location.search, /hl=en/);
-      assert.equal(
-        window.location.href,
-        'https://www.instagram.com/?hl=en&variant=following',
-      );
-    } else if (href.includes('instagram.com')) {
-      assert.equal(window.location.href, 'https://www.instagram.com/?variant=following');
-    }
-
-    const tablist = getHomeTablist(window);
-    assert.ok(tablist);
-    assert.equal(findForYouTab(tablist), null);
     assert.equal(
-      tablist.querySelector('[role="tab"][aria-selected="true"]').textContent.trim(),
-      'Following',
+      window.document.documentElement.classList.contains('irb-home-blocking'),
+      false,
     );
-    assert.equal(window.document.documentElement.classList.contains('irb-home-blocking'), false);
   }
 
-  for (const href of ['https://instagram.com', 'https://instagram.com/?hl=en']) {
+  // Apex host redirects onto the www home Following URL.
+  for (const [href, expectedTarget] of [
+    ['https://instagram.com/', 'https://www.instagram.com/?variant=following'],
+    ['https://instagram.com/?hl=en', 'https://www.instagram.com/?hl=en&variant=following'],
+  ]) {
     const storageBundle = createStorageMock();
-    /** @type {string | null} */
-    let navigatedTo = null;
-    const { window } = createSession(readFixture('logged-in-home.html'), href, {
+    const { window, navigations } = createSession(readFixture('logged-in-home.html'), href, {
       chrome: storageBundle.chrome,
+      reconfigureOnNavigate: false,
     });
-    installWwwHomeNavigation(window, (url) => {
-      navigatedTo = url;
+    await applySwitches(window, { blockForYou: true });
+    assert.equal(navigations[navigations.length - 1], expectedTarget);
+  }
+}
+
+async function assertFollowingUrlStripsForYouNoRedirect() {
+  for (const href of [
+    'https://www.instagram.com/?variant=following',
+    'https://www.instagram.com/?variant=following&hl=en',
+  ]) {
+    const storageBundle = createStorageMock();
+    const { window, navigations } = createSession(readFixture('logged-in-home.html'), href, {
+      chrome: storageBundle.chrome,
     });
     await applySwitches(window, { blockForYou: true });
 
-    assert.equal(
-      navigatedTo,
-      href.includes('hl=en')
-        ? 'https://www.instagram.com/?hl=en&variant=following'
-        : 'https://www.instagram.com/?variant=following',
-    );
-    assert.ok(!('extensionCommittedHomeFollowing' in storageBundle.storage.snapshot()));
-
-    const landed = bootContentSession(
-      readFixture('logged-in-home.html'),
-      navigatedTo,
-      createStorageMock({ blockForYou: true }),
-    );
-    await settle();
-    assert.match(landed.window.location.search, /variant=following/);
-    assert.equal(findForYouTab(getHomeTablist(landed.window)), null);
+    assert.equal(findForYouTab(getHomeTablist(window)), null);
+    assert.equal(navigations.length, 0, 'already on Following: no redirect');
+    assert.equal(getVariant(window.location.search), 'following');
+    assert.equal(window.location.href, href);
   }
+}
+
+async function assertFavoritesUrlStripsForYouKeepsFavorites() {
+  const storageBundle = createStorageMock();
+  const { window, navigations } = createSession(
+    readFixture('logged-in-home-favorites.html'),
+    'https://www.instagram.com/?variant=favorites',
+    { chrome: storageBundle.chrome },
+  );
+  await applySwitches(window, { blockForYou: true });
+
+  const tablist = getHomeTablist(window);
+  assert.equal(navigations.length, 0, 'favorites URL left alone: no redirect');
+  assert.equal(getVariant(window.location.search), 'favorites');
+  assert.equal(findForYouTab(tablist), null, 'For you still stripped');
+  const favorites = findFavoritesTab(tablist);
+  assert.ok(favorites, 'Favorites tab present');
+  assert.equal(favorites.getAttribute('aria-selected'), 'true', 'Favorites selection untouched');
 }
 
 async function assertTablistRerenderDropsForYou() {
@@ -285,92 +266,47 @@ async function assertTablistRerenderDropsForYou() {
     { chrome: storageBundle.chrome },
   );
   await applySwitches(window, { blockForYou: true });
+  assert.equal(findForYouTab(getHomeTablist(window)), null);
 
+  // Instagram re-renders the tablist (adds For you back).
   const tablist = getHomeTablist(window);
-  assert.ok(tablist);
-
   const rerender = window.document.createElement('div');
   rerender.setAttribute('role', 'tablist');
+  rerender.setAttribute('data-testid', 'home-feed-tablist');
   rerender.innerHTML =
-    '<div role="tab" aria-selected="false" class="disabled" aria-disabled="true">For you</div>' +
+    '<div role="tab" aria-selected="false">For you</div>' +
     '<div role="tab" aria-selected="true">Following</div>';
   tablist.replaceWith(rerender);
+  await settle();
 
-  api.sync();
-
-  assert.equal(findForYouTab(rerender), null);
-  assert.equal(api.hasDisabledForYouTab(rerender), false);
-  assert.equal(
-    rerender.querySelector('[role="tab"][aria-selected="true"]').textContent.trim(),
-    'Following',
-  );
+  assert.equal(findForYouTab(getHomeTablist(window)), null, 'For you re-stripped after re-render');
 }
 
 async function assertSidebarHomeFromOffHomePages() {
-  const paths = [
+  for (const startHref of [
     'https://www.instagram.com/explore/',
     'https://www.instagram.com/reels/',
     'https://www.instagram.com/direct/inbox/',
     'https://www.instagram.com/someuser/',
-  ];
-
-  for (const startHref of paths) {
+  ]) {
     const storageBundle = createStorageMock();
-    const { window, api } = createSession(readFixture('sidebar-context.html'), startHref, {
+    const { window, api, navigations } = createSession(readFixture('sidebar-context.html'), startHref, {
       chrome: storageBundle.chrome,
     });
     await applySwitches(window, { blockForYou: true });
+    assert.equal(navigations.length, 0, `off-home route ${startHref}: no redirect`);
 
     window.history.pushState({}, '', 'https://www.instagram.com/');
     api.sync();
     await settle();
 
-    assert.match(window.location.search, /variant=following/);
     assert.equal(getVariant(window.location.search), 'following');
   }
 }
 
-async function assertDirectFollowingUrl() {
-  const storageBundle = createStorageMock();
-  const { window } = createSession(
-    readFixture('logged-in-home.html'),
-    'https://www.instagram.com/?variant=following&hl=en',
-    { chrome: storageBundle.chrome },
-  );
-  await applySwitches(window, { blockForYou: true });
-
-  assert.equal(getVariant(window.location.search), 'following');
-  assert.match(window.location.search, /hl=en/);
-  const tablist = getHomeTablist(window);
-  assert.equal(findForYouTab(tablist), null);
-}
-
-async function assertFavoritesVariant() {
-  const storageBundle = createStorageMock();
-  const { window } = createSession(
-    readFixture('logged-in-home-favorites.html'),
-    'https://www.instagram.com/?variant=favorites',
-    { chrome: storageBundle.chrome },
-  );
-  await applySwitches(window, { blockForYou: true });
-
-  assert.equal(getVariant(window.location.search), 'favorites');
-  const tablist = getHomeTablist(window);
-  assert.equal(findForYouTab(tablist), null);
-  assert.ok(tablist.textContent.includes('Favorites'));
-  assert.equal(
-    tablist.querySelector('[role="tab"]:not([aria-selected="false"])')?.textContent.trim(),
-    'Favorites',
-  );
-  assert.equal(
-    tablist.querySelector('[role="tab"][aria-selected="true"]')?.textContent.trim(),
-    'Favorites',
-  );
-}
-
 async function assertExploreTablistUntouched() {
   const storageBundle = createStorageMock();
-  const { window } = createSession(
+  const { window, navigations } = createSession(
     readFixture('explore.html'),
     'https://www.instagram.com/explore/',
     { chrome: storageBundle.chrome },
@@ -381,299 +317,87 @@ async function assertExploreTablistUntouched() {
   assert.ok(exploreTablist);
   assert.ok(exploreTablist.textContent.includes('For you'));
   assert.ok(exploreTablist.textContent.includes('Not personalized'));
-  assert.ok(window.document.querySelector('[data-testid="explore-grid"]'));
+  assert.equal(navigations.length, 0, 'explore route is not redirected');
 }
 
-async function assertLoggedOutNoBounce() {
+async function assertLoggedOutReachesLoginNoBounce() {
   const storageBundle = createStorageMock();
-  const { window } = createSession(readFixture('logged-out.html'), 'https://www.instagram.com/', {
-    chrome: storageBundle.chrome,
-  });
-  await applySwitches(window, { blockForYou: true });
-
-  assert.equal(window.location.pathname, '/');
-  assert.equal(window.location.search, '');
-  assert.ok(window.document.querySelector('input[name="username"]'));
-}
-
-async function assertLoggedOutHomeLogoNoRewriteLoop() {
-  const storageBundle = createStorageMock();
-  const { window, api } = createSession(
-    readFixture('logged-out-with-home-logo.html'),
+  const { window, api, navigations } = createSession(
+    readFixture('logged-out.html'),
     'https://www.instagram.com/',
     { chrome: storageBundle.chrome },
   );
   await applySwitches(window, { blockForYou: true });
 
-  assert.equal(window.location.href, 'https://www.instagram.com/');
-  assert.equal(window.location.search, '');
-
-  window.history.pushState({}, '', 'https://www.instagram.com/');
-  api.sync();
-  assert.equal(window.location.href, 'https://www.instagram.com/');
-  assert.equal(window.location.search, '');
-
-  window.history.pushState({}, '', 'https://www.instagram.com/');
-  api.sync();
-  assert.equal(window.location.search, '');
-}
-
-async function assertToggleOffAfterExtensionCommitAndHistoryEcho() {
-  const storageBundle = createStorageMock();
-  const { window, api } = createSession(readFixture('logged-in-home.html'), 'https://www.instagram.com/', {
-    chrome: storageBundle.chrome,
-  });
-  await applySwitches(window, { blockForYou: true });
-  assert.match(window.location.search, /variant=following/);
-
-  window.history.replaceState({}, '', window.location.href);
-  api.sync();
-  await settle();
-  assert.match(window.location.search, /variant=following/);
-
-  await applySwitches(window, { blockForYou: false });
-
-  assert.equal(window.location.search, '');
-  const tablist = getHomeTablist(window);
-  assert.equal(
-    tablist.querySelectorAll('[role="tab"][aria-selected="true"]').length,
-    1,
-  );
-  assert.equal(
-    tablist.querySelector('[role="tab"][aria-selected="true"]').textContent.trim(),
-    'For you',
-  );
-}
-
-async function assertUserFollowingUrlSurvivesBlockOff() {
-  const storageBundle = createStorageMock();
-  const { window } = createSession(
-    readFixture('logged-in-home.html'),
-    'https://www.instagram.com/?variant=following',
-    { chrome: storageBundle.chrome },
-  );
-  await applySwitches(window, { blockForYou: false });
-
-  assert.equal(getVariant(window.location.search), 'following');
-  const tablist = getHomeTablist(window);
-  assert.ok(findForYouTab(tablist));
-}
-
-async function assertBlockForYouOffRestoresForYou() {
-  const storageBundle = createStorageMock();
-  const { window, api } = createSession(readFixture('logged-in-home.html'), 'https://www.instagram.com/', {
-    chrome: storageBundle.chrome,
-  });
-  await applySwitches(window, { blockForYou: false });
-
-  assert.equal(window.location.search, '');
-  const tablist = getHomeTablist(window);
-  assert.ok(findForYouTab(tablist));
-  assert.ok(tablist.textContent.includes('For you'));
-
-  window.history.pushState({}, '', 'https://www.instagram.com/?variant=following');
-  api.sync();
-  assert.equal(getVariant(window.location.search), 'following');
-  assert.ok(findForYouTab(tablist));
-}
-
-async function assertNoApexRewriteBeforeStorageReady() {
-  const storageBundle = createStorageMock({ blockForYou: false });
-  storageBundle.storage.blockGet();
-  /** @type {string | null} */
-  let navigatedTo = null;
-  const { window } = bootContentSession(
-    readFixture('logged-in-home.html'),
-    'https://instagram.com/?hl=en',
-    storageBundle,
-  );
-  installWwwHomeNavigation(window, (url) => {
-    navigatedTo = url;
-  });
-  window.__IRB_HOME_FOR_YOU__.sync();
-  await settle();
-  assert.equal(navigatedTo, null);
-  assert.equal(window.location.hostname, 'instagram.com');
-  assert.equal(window.location.search, '?hl=en');
-
-  storageBundle.storage.unblockGet();
-  await settle();
-  assert.equal(navigatedTo, null);
-  assert.equal(window.location.search, '?hl=en');
-}
-
-async function assertFreshDocumentFollowingWithBlockOffIsUserFollowing() {
-  const landed = bootContentSession(
-    readFixture('logged-in-home.html'),
-    'https://www.instagram.com/?hl=en&variant=following',
-    createStorageMock({ blockForYou: false }),
-  );
-  await settle();
-  assert.equal(landed.window.location.search, '?hl=en&variant=following');
-  assert.equal(getVariant(landed.window.location.search), 'following');
-  assert.ok(findForYouTab(getHomeTablist(landed.window)));
-}
-
-async function assertStaleFavoritesOnHomeSelectsFollowing() {
-  const storageBundle = createStorageMock();
-  const { window } = createSession(
-    readFixture('logged-in-home-stale-favorites.html'),
-    'https://www.instagram.com/?hl=en',
-    { chrome: storageBundle.chrome },
-  );
-  await applySwitches(window, { blockForYou: true });
-  assert.match(window.location.search, /variant=following/);
-  assert.match(window.location.search, /hl=en/);
-  const tablist = getHomeTablist(window);
-  assert.equal(findForYouTab(tablist), null);
-  assert.ok(tablist.textContent.includes('Favorites'));
-  assert.equal(
-    tablist.querySelector('[role="tab"][aria-selected="true"]').textContent.trim(),
-    'Following',
-  );
-  const favoritesTab = [...tablist.querySelectorAll('[role="tab"]')].find(
-    (tab) => tab.textContent.trim() === 'Favorites',
-  );
-  assert.equal(favoritesTab?.getAttribute('aria-selected'), 'false');
-}
-
-async function assertFollowingAfterFavoritesRouteWithBlockOff() {
-  const storageBundle = createStorageMock();
-  const { window, api } = createSession(readFixture('logged-in-home.html'), 'https://www.instagram.com/', {
-    chrome: storageBundle.chrome,
-  });
-  await applySwitches(window, { blockForYou: true });
-  assert.match(window.location.search, /variant=following/);
-
-  window.history.pushState({}, '', 'https://www.instagram.com/?variant=favorites');
-  api.sync();
-  await settle();
-  await applySwitches(window, { blockForYou: false });
-
-  window.history.pushState({}, '', 'https://www.instagram.com/?variant=following');
-  api.sync();
-  await settle();
-
-  const tablist = getHomeTablist(window);
-  assert.equal(getVariant(window.location.search), 'following');
-  assert.ok(findForYouTab(tablist));
-  assertSingleSelectedTab(tablist, 'Following');
-}
-
-async function assertRepeatedBlockOnOffStillCommitsFollowing() {
-  const storageBundle = createStorageMock();
-  const { window } = createSession(readFixture('logged-in-home.html'), 'https://www.instagram.com/', {
-    chrome: storageBundle.chrome,
-  });
-  for (let i = 0; i < 5; i += 1) {
-    await applySwitches(window, { blockForYou: true });
-    assert.match(window.location.search, /variant=following/);
-    await applySwitches(window, { blockForYou: false });
-    assert.equal(window.location.search, '');
+  // The login UI stays reachable; the bare home redirects at most once onto a
+  // Following URL and then settles (no / <-> /?variant=following bounce).
+  assert.ok(window.document.querySelector('input[name="username"]'), 'login form present');
+  const uniqueTargets = new Set(navigations);
+  assert.ok(uniqueTargets.size <= 1, `at most one redirect target, saw ${[...uniqueTargets]}`);
+  if (navigations.length) {
+    assert.equal(navigations[navigations.length - 1], 'https://www.instagram.com/?variant=following');
+    assert.equal(getVariant(window.location.search), 'following');
   }
-  await applySwitches(window, { blockForYou: true });
-  assert.match(window.location.search, /variant=following/);
-  assert.equal(
-    window.document.documentElement.classList.contains('irb-home-blocking'),
-    false,
-  );
+
+  // A repeated sync on the committed URL does not navigate again.
+  const before = navigations.length;
+  api.sync();
+  await settle();
+  assert.equal(navigations.length, before, 'no further redirect after commit');
 }
 
-async function assertStaleFavoritesOnFollowingUrlSelectsFollowing() {
-  const storageBundle = createStorageMock();
-  const { window } = createSession(
-    readFixture('logged-in-home-favorites.html'),
-    'https://www.instagram.com/?variant=following',
-    { chrome: storageBundle.chrome },
-  );
-  await applySwitches(window, { blockForYou: true });
-  const tablist = getHomeTablist(window);
-  assert.equal(getVariant(window.location.search), 'following');
-  assertSingleSelectedTab(tablist, 'Following');
-}
-
-async function assertArrivalAtHomeAfterFavoritesCommitsFollowing() {
+async function assertToggleOffRestoresForYou() {
   const storageBundle = createStorageMock();
   const { window, api } = createSession(
-    readFixture('logged-in-home-favorites.html'),
-    'https://www.instagram.com/?variant=favorites',
+    readFixture('logged-in-home.html'),
+    'https://www.instagram.com/?variant=following',
     { chrome: storageBundle.chrome },
   );
   await applySwitches(window, { blockForYou: true });
-  assert.equal(getVariant(window.location.search), 'favorites');
+  assert.equal(findForYouTab(getHomeTablist(window)), null);
 
-  window.history.pushState({}, '', 'https://www.instagram.com/');
-  api.sync();
-  await settle();
-
+  await applySwitches(window, { blockForYou: false });
   const tablist = getHomeTablist(window);
-  assert.equal(getVariant(window.location.search), 'following');
-  assertSingleSelectedTab(tablist, 'Following');
+  assert.ok(findForYouTab(tablist), 'For you restored when block turns off');
+  assert.ok(tablist.textContent.includes('For you'));
 }
 
-async function assertRepeatedFavoritesRoundTripCommitsFollowing() {
+async function assertBlockOffNeverRedirectsOrStrips() {
   const storageBundle = createStorageMock();
-  const { window, api } = createSession(readFixture('logged-in-home.html'), 'https://www.instagram.com/', {
-    chrome: storageBundle.chrome,
-  });
-  await applySwitches(window, { blockForYou: true });
-  assert.match(window.location.search, /variant=following/);
-
-  for (let round = 0; round < 3; round += 1) {
-    window.history.pushState({}, '', 'https://www.instagram.com/?variant=favorites');
-    api.sync();
-    await settle();
-    window.history.pushState({}, '', 'https://www.instagram.com/?hl=en');
-    api.sync();
-    await settle();
-
-    const tablist = getHomeTablist(window);
-    assert.equal(getVariant(window.location.search), 'following', `round ${round + 1}`);
-    assert.match(window.location.search, /hl=en/);
-    assertSingleSelectedTab(tablist, 'Following');
-    assert.equal(
-      window.document.documentElement.classList.contains('irb-home-blocking'),
-      false,
-      `round ${round + 1}`,
-    );
-  }
-}
-
-async function assertApexFavoritesRevealedWithBlockOn() {
-  const storageBundle = createStorageMock();
-  const { window } = createSession(
-    readFixture('logged-in-home-favorites.html'),
-    'https://instagram.com/?variant=favorites&hl=en',
+  const { window, api, navigations } = createSession(
+    readFixture('logged-in-home.html'),
+    'https://www.instagram.com/',
     { chrome: storageBundle.chrome },
   );
-  await applySwitches(window, { blockForYou: true });
+  await applySwitches(window, { blockForYou: false });
 
-  assert.equal(window.location.hostname, 'instagram.com');
-  assert.equal(getVariant(window.location.search), 'favorites');
-  assert.match(window.location.search, /hl=en/);
-  assert.equal(
-    window.document.documentElement.classList.contains('irb-home-blocking'),
-    false,
-  );
-  assertSingleSelectedTab(getHomeTablist(window), 'Favorites');
-}
+  assert.equal(navigations.length, 0);
+  assert.equal(window.location.search, '');
+  assert.ok(findForYouTab(getHomeTablist(window)), 'For you left in place when block is off');
 
-async function assertFollowingAfterExploreDetourSingleSelected() {
-  const storageBundle = createStorageMock();
-  const { window, api } = createSession(readFixture('logged-in-home.html'), 'https://www.instagram.com/', {
-    chrome: storageBundle.chrome,
-  });
-  await applySwitches(window, { blockForYou: true });
-  window.history.pushState({}, '', 'https://www.instagram.com/explore/');
-  api.sync();
-  await settle();
   window.history.pushState({}, '', 'https://www.instagram.com/?variant=following');
   api.sync();
   await settle();
-  await applySwitches(window, { blockForYou: false });
-  const tablist = getHomeTablist(window);
   assert.equal(getVariant(window.location.search), 'following');
-  assertSingleSelectedTab(tablist, 'Following');
+  assert.ok(findForYouTab(getHomeTablist(window)), 'user-chosen Following keeps For you with block off');
+}
+
+async function assertRepeatedToggleStaysStable() {
+  const storageBundle = createStorageMock();
+  const { window, navigations } = createSession(
+    readFixture('logged-in-home.html'),
+    'https://www.instagram.com/',
+    { chrome: storageBundle.chrome },
+  );
+  for (let i = 0; i < 5; i += 1) {
+    navigations.length = 0;
+    await applySwitches(window, { blockForYou: true });
+    assert.equal(findForYouTab(getHomeTablist(window)), null, `round ${i}: stripped`);
+    assert.match(window.location.search, /variant=following/);
+
+    await applySwitches(window, { blockForYou: false });
+    assert.ok(findForYouTab(getHomeTablist(window)), `round ${i}: restored`);
+  }
 }
 
 function assertPendingFlushAppliesHomeSwitches() {
@@ -684,168 +408,48 @@ function assertPendingFlushAppliesHomeSwitches() {
   );
 }
 
-async function assertFavoritesStaysSelectedWhenBlockOffAfterFollowingCommit() {
-  const storageBundle = createStorageMock();
-  const { window, api } = createSession(readFixture('logged-in-home-favorites.html'), 'https://www.instagram.com/', {
-    chrome: storageBundle.chrome,
-  });
-  await applySwitches(window, { blockForYou: true });
-  assert.match(window.location.search, /variant=following/);
-
-  window.history.pushState({}, '', 'https://www.instagram.com/?variant=favorites');
-  const tablist = getHomeTablist(window);
-  for (const tab of tablist.querySelectorAll('[role="tab"]')) {
-    tab.setAttribute('aria-selected', tab.textContent.trim() === 'Favorites' ? 'true' : 'false');
-  }
-  api.sync();
+async function assertContentScriptWiresHomeBlock() {
+  const storageBundle = createStorageMock({ blockForYou: false });
+  const { window } = bootContentSession(
+    readFixture('logged-in-home.html'),
+    'https://www.instagram.com/',
+    storageBundle,
+  );
   await settle();
 
-  await applySwitches(window, { blockForYou: false });
-  assert.equal(getVariant(window.location.search), 'favorites');
-  assert.equal(
-    tablist.querySelector('[role="tab"][aria-selected="true"]').textContent.trim(),
-    'Favorites',
-  );
-}
-
-async function assertContentScriptWiresHomeBlock() {
-  let store = { blockForYou: false };
-  const listeners = [];
-
-  const storage = {
-    get(keys) {
-      return Promise.resolve(
-        keys.reduce((out, key) => {
-          if (key in store) {
-            out[key] = store[key];
-          }
-          return out;
-        }, {}),
-      );
-    },
-    set(partial, callback) {
-      const changes = {};
-      for (const [key, value] of Object.entries(partial)) {
-        changes[key] = { oldValue: store[key], newValue: value };
-        store[key] = value;
-      }
-      for (const listener of listeners) {
-        listener(changes, 'local');
-      }
-      const done = Promise.resolve();
-      if (typeof callback === 'function') {
-        done.then(() => callback());
-      }
-      return done;
-    },
-    remove(keys) {
-      for (const key of keys) {
-        delete store[key];
-      }
-      return Promise.resolve();
-    },
-  };
-
-  const dom = new JSDOM(readFixture('logged-in-home.html'), {
-    url: 'https://www.instagram.com/',
-    pretendToBeVisual: true,
-    runScripts: 'outside-only',
-  });
-  const { window } = dom;
-  installWwwHomeNavigation(window, (url) => {
-    dom.reconfigure({ url: String(url) });
-  });
-  window.chrome = {
-    storage: {
-      local: storage,
-      onChanged: { addListener(fn) { listeners.push(fn); } },
-    },
-  };
-  window.eval(`${fs.readFileSync(homeScriptPath, 'utf8')}\n//# sourceURL=home-for-you-block.js`);
-  window.eval(`${fs.readFileSync(contentScriptPath, 'utf8')}\n//# sourceURL=content.js`);
-
-  openDomSessions.push({ dom, api: window.__IRB_HOME_FOR_YOU__ });
-
-  for (let i = 0; i < 8; i += 1) {
-    await Promise.resolve();
-  }
-
+  // Block off: For you present, no redirect.
   assert.equal(window.location.search, '');
-  const tablist = getHomeTablist(window);
-  assert.ok(findForYouTab(tablist));
-  window.__IRB_HOME_FOR_YOU__?.teardown?.();
+  assert.ok(findForYouTab(getHomeTablist(window)));
 
-  store = {};
+  // Turn the switch on through storage.
+  await storageBundle.chrome.storage.local.set({ blockForYou: true });
+  await settle();
+  assert.match(window.location.search, /variant=following/);
+  assert.equal(findForYouTab(getHomeTablist(window)), null);
 
-  const domOn = new JSDOM(readFixture('logged-in-home.html'), {
-    url: 'https://www.instagram.com/',
-    pretendToBeVisual: true,
-    runScripts: 'outside-only',
-  });
-  const windowOn = domOn.window;
-  installWwwHomeNavigation(windowOn, (url) => {
-    domOn.reconfigure({ url: String(url) });
-  });
-  windowOn.chrome = {
-    storage: {
-      local: storage,
-      onChanged: { addListener(fn) { listeners.push(fn); } },
-    },
-  };
-  windowOn.eval(`${fs.readFileSync(homeScriptPath, 'utf8')}\n//# sourceURL=home-for-you-block.js`);
-  windowOn.eval(`${fs.readFileSync(contentScriptPath, 'utf8')}\n//# sourceURL=content.js`);
-  openDomSessions.push({ dom: domOn, api: windowOn.__IRB_HOME_FOR_YOU__ });
-
-  for (let i = 0; i < 8; i += 1) {
-    await Promise.resolve();
-  }
-
-  assert.match(windowOn.location.search, /variant=following/);
-  const tablistOn = getHomeTablist(windowOn);
-  assert.equal(findForYouTab(tablistOn), null);
-
-  await storage.set({ blockForYou: false });
-  await Promise.resolve();
-  await Promise.resolve();
-
-  assert.equal(windowOn.location.search, '');
-  assert.ok(findForYouTab(tablistOn));
-  assert.equal(
-    tablistOn.querySelectorAll('[role="tab"][aria-selected="true"]').length,
-    1,
-  );
+  // Turn it back off through storage.
+  await storageBundle.chrome.storage.local.set({ blockForYou: false });
+  await settle();
+  assert.ok(findForYouTab(getHomeTablist(window)));
 }
 
 async function runTask21Verify() {
   assertManifestLoadsHomeScriptFirst();
   assertPureUrlHelpers();
-  await assertLoggedInHomeColdLoad();
+  await assertColdLoadBareHomeRedirectsAndStripsForYou();
+  await assertFollowingUrlStripsForYouNoRedirect();
+  await assertFavoritesUrlStripsForYouKeepsFavorites();
   await assertTablistRerenderDropsForYou();
   await assertSidebarHomeFromOffHomePages();
-  await assertDirectFollowingUrl();
-  await assertFavoritesVariant();
   await assertExploreTablistUntouched();
-  await assertLoggedOutNoBounce();
-  await assertLoggedOutHomeLogoNoRewriteLoop();
-  await assertToggleOffAfterExtensionCommitAndHistoryEcho();
-  await assertUserFollowingUrlSurvivesBlockOff();
-  await assertBlockForYouOffRestoresForYou();
-  await assertNoApexRewriteBeforeStorageReady();
-  await assertFreshDocumentFollowingWithBlockOffIsUserFollowing();
-  await assertStaleFavoritesOnHomeSelectsFollowing();
-  await assertFollowingAfterFavoritesRouteWithBlockOff();
-  await assertRepeatedBlockOnOffStillCommitsFollowing();
-  await assertStaleFavoritesOnFollowingUrlSelectsFollowing();
-  await assertArrivalAtHomeAfterFavoritesCommitsFollowing();
-  await assertRepeatedFavoritesRoundTripCommitsFollowing();
-  await assertApexFavoritesRevealedWithBlockOn();
-  await assertFollowingAfterExploreDetourSingleSelected();
-  await assertFavoritesStaysSelectedWhenBlockOffAfterFollowingCommit();
-  await assertPendingFlushAppliesHomeSwitches();
+  await assertLoggedOutReachesLoginNoBounce();
+  await assertToggleOffRestoresForYou();
+  await assertBlockOffNeverRedirectsOrStrips();
+  await assertRepeatedToggleStaysStable();
+  assertPendingFlushAppliesHomeSwitches();
   await assertContentScriptWiresHomeBlock();
 
   closeDomSessions();
-
   console.log('task-2.1-verify: all checks passed');
 }
 

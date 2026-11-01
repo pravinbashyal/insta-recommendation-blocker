@@ -1,13 +1,25 @@
 {
   "manifest_version": 3,
   "name": "Instagram Recommendation Blocker",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Block Instagram For you, Reels viewer, and Explore discovery grids with toolbar switches.",
   "permissions": ["storage"],
   "host_permissions": ["*://*.instagram.com/*"],
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
   "action": {
     "default_title": "Instagram Recommendation Blocker",
-    "default_popup": "popup/popup.html"
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
   },
   "content_scripts": [
     {

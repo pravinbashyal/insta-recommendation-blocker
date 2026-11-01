@@ -1,5 +1,5 @@
 /**
- * Home For you blocking — pure helpers and DOM routines (ES module for tests).
+ * Home For you blocking — pure helpers and tablist routines (ES module for tests).
  * Classic content bootstrap: extension/content/home-for-you-block.js
  */
 
@@ -7,6 +7,7 @@ export const FOR_YOU_LABEL = 'For you';
 export const FOLLOWING_LABEL = 'Following';
 export const FAVORITES_LABEL = 'Favorites';
 export const EXPLORE_NOT_PERSONALIZED_LABEL = 'Not personalized';
+export const WWW_HOME_ORIGIN = 'https://www.instagram.com';
 
 /**
  * @param {string} hostname
@@ -50,22 +51,6 @@ export function getVariant(search) {
 }
 
 /**
- * @param {boolean} blockForYou
- * @param {string} search
- * @returns {boolean}
- */
-export function needsFollowingVariant(blockForYou, search) {
-  if (!blockForYou) {
-    return false;
-  }
-  const variant = getVariant(search);
-  if (variant === 'favorites' || variant === 'following') {
-    return false;
-  }
-  return true;
-}
-
-/**
  * @param {string} search
  * @returns {string}
  */
@@ -77,15 +62,30 @@ export function buildFollowingSearch(search) {
 }
 
 /**
- * @param {string} href
+ * @param {string} search
  * @returns {string}
  */
-export function canonicalHomeFollowingHref(href) {
-  const url = new URL(href);
-  url.hostname = 'www.instagram.com';
-  url.pathname = '/';
-  url.search = buildFollowingSearch(url.search);
-  return url.href;
+export function buildWwwHomeHref(search) {
+  if (!search) {
+    return `${WWW_HOME_ORIGIN}/`;
+  }
+  const qs = search.startsWith('?') ? search : `?${search}`;
+  return `${WWW_HOME_ORIGIN}/${qs}`;
+}
+
+/**
+ * The bare home feed (For you) redirects to Following. Favorites and an
+ * already-following URL are left exactly as they are.
+ * @param {boolean} blockForYou
+ * @param {{ hostname: string, pathname: string, search: string }} locationLike
+ * @returns {boolean}
+ */
+export function needsFollowingRedirect(blockForYou, locationLike) {
+  if (!blockForYou || !isHomeRoute(locationLike)) {
+    return false;
+  }
+  const variant = getVariant(locationLike.search);
+  return variant !== 'following' && variant !== 'favorites';
 }
 
 /**
@@ -112,6 +112,7 @@ export function tablistContainsLabel(tablist, label) {
 }
 
 /**
+ * Explore's tablist is "For you" / "Not personalized"; never touch it.
  * @param {Element} tablist
  * @returns {boolean}
  */
@@ -132,13 +133,9 @@ export function isHomeFeedTablist(tablist) {
 
 /**
  * @param {ParentNode} root
- * @param {boolean} onHomeRoute
  * @returns {Element[]}
  */
-export function findHomeFeedTablists(root, onHomeRoute) {
-  if (!onHomeRoute) {
-    return [];
-  }
+export function findHomeFeedTablists(root) {
   /** @type {Element[]} */
   const result = [];
   const tablists = root.querySelectorAll('[role="tablist"]');
@@ -152,16 +149,25 @@ export function findHomeFeedTablists(root, onHomeRoute) {
 
 /**
  * @param {Element} tablist
+ * @param {string} label
  * @returns {Element | null}
  */
-export function findForYouTab(tablist) {
+export function findTabByLabel(tablist, label) {
   const tabs = tablist.querySelectorAll('[role="tab"]');
   for (const tab of tabs) {
-    if (normalizedTabText(tab) === FOR_YOU_LABEL) {
+    if (normalizedTabText(tab) === label) {
       return tab;
     }
   }
   return null;
+}
+
+/**
+ * @param {Element} tablist
+ * @returns {Element | null}
+ */
+export function findForYouTab(tablist) {
+  return findTabByLabel(tablist, FOR_YOU_LABEL);
 }
 
 /**
@@ -169,180 +175,13 @@ export function findForYouTab(tablist) {
  * @returns {Element | null}
  */
 export function findFollowingTab(tablist) {
-  const tabs = tablist.querySelectorAll('[role="tab"]');
-  for (const tab of tabs) {
-    if (normalizedTabText(tab) === FOLLOWING_LABEL) {
-      return tab;
-    }
-  }
-  return null;
+  return findTabByLabel(tablist, FOLLOWING_LABEL);
 }
 
 /**
  * @param {Element} tablist
- * @returns {boolean}
- */
-export function hasDisabledForYouTab(tablist) {
-  const tab = findForYouTab(tablist);
-  if (!tab) {
-    return false;
-  }
-  return (
-    tab.getAttribute('aria-disabled') === 'true' ||
-    tab.hasAttribute('disabled') ||
-    tab.classList.contains('disabled')
-  );
-}
-
-/**
- * @param {Element} tablist
- * @param {boolean} blockForYou
+ * @returns {Element | null}
  */
 export function findFavoritesTab(tablist) {
-  const tabs = tablist.querySelectorAll('[role="tab"]');
-  for (const tab of tabs) {
-    if (normalizedTabText(tab) === FAVORITES_LABEL) {
-      return tab;
-    }
-  }
-  return null;
-}
-
-export function shouldLeaveFavoritesSelection(search) {
-  return getVariant(search) === 'favorites';
-}
-
-export function applyHomeTablistBlock(tablist, blockForYou, search) {
-  if (!blockForYou) {
-    return;
-  }
-  const forYou = findForYouTab(tablist);
-  if (forYou) {
-    forYou.remove();
-  }
-  if (shouldLeaveFavoritesSelection(search)) {
-    return;
-  }
-  const following = findFollowingTab(tablist);
-  if (following) {
-    const tabs = tablist.querySelectorAll('[role="tab"]');
-    for (const tab of tabs) {
-      tab.setAttribute('aria-selected', tab === following ? 'true' : 'false');
-    }
-  }
-}
-
-/**
- * @param {Document | Element} doc
- * @returns {boolean}
- */
-export function hasLoggedOutLoginUi(doc) {
-  if (doc.querySelector('input[name="username"]')) {
-    return true;
-  }
-  if (doc.querySelector('form#loginForm')) {
-    return true;
-  }
-  if (doc.querySelector('[data-testid="login-page"]')) {
-    return true;
-  }
-  return false;
-}
-
-/**
- * @param {Document | Element} doc
- * @returns {boolean}
- */
-export function hasLoggedInHomeShell(doc) {
-  if (hasLoggedOutLoginUi(doc)) {
-    return false;
-  }
-  if (doc.querySelector('[data-testid="logged-in-home-shell"]')) {
-    return true;
-  }
-  if (doc.querySelector('[data-testid="mobile-nav-home-link"]')) {
-    return true;
-  }
-  if (
-    doc.querySelector(
-      'nav[data-testid="sidebar"] a[href="/"], nav[data-testid="sidebar"] a[href="https://www.instagram.com/"]',
-    )
-  ) {
-    return true;
-  }
-  const tablists = doc.querySelectorAll('[role="tablist"]');
-  for (const tablist of tablists) {
-    if (isHomeFeedTablist(tablist)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/**
- * @param {Document | Element} doc
- * @param {boolean} blockForYou
- * @returns {boolean}
- */
-export function shouldRewriteLoggedInHome(doc, blockForYou) {
-  if (!blockForYou) {
-    return false;
-  }
-  if (hasLoggedOutLoginUi(doc)) {
-    return false;
-  }
-  return hasLoggedInHomeShell(doc);
-}
-
-/**
- * @param {boolean} blockForYou
- * @param {string} search
- * @param {Document | Element} doc
- * @returns {boolean}
- */
-export function isHomeSurfaceCommitted(blockForYou, search, doc, onHomeRoute) {
-  if (!onHomeRoute) {
-    return true;
-  }
-  if (!blockForYou) {
-    return true;
-  }
-  if (!shouldRewriteLoggedInHome(doc, blockForYou)) {
-    return true;
-  }
-  if (needsFollowingVariant(blockForYou, search) && getVariant(search) !== 'favorites') {
-    return false;
-  }
-  const tablists = findHomeFeedTablists(doc, onHomeRoute);
-  if (tablists.length === 0) {
-    return false;
-  }
-  for (const tablist of tablists) {
-    if (findForYouTab(tablist) || hasDisabledForYouTab(tablist)) {
-      return false;
-    }
-    const following = findFollowingTab(tablist);
-    const variant = getVariant(search);
-    if (variant !== 'favorites' && following && following.getAttribute('aria-selected') !== 'true') {
-      return false;
-    }
-  }
-  return true;
-}
-
-/**
- * @param {boolean} blockForYou
- * @param {string} search
- * @param {Document | Element} doc
- * @param {boolean} onHomeRoute
- * @returns {boolean}
- */
-export function shouldHideHomeSurface(blockForYou, search, doc, onHomeRoute) {
-  if (!onHomeRoute || !blockForYou) {
-    return false;
-  }
-  if (!shouldRewriteLoggedInHome(doc, blockForYou)) {
-    return false;
-  }
-  return !isHomeSurfaceCommitted(blockForYou, search, doc, onHomeRoute);
+  return findTabByLabel(tablist, FAVORITES_LABEL);
 }

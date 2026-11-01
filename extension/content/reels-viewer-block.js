@@ -2,42 +2,29 @@
   'use strict';
 
   var WWW_HOME_HREF = 'https://www.instagram.com/';
-  var HIDE_CLASS = 'irb-reels-blocking';
-  var STYLE_ID = 'irb-reels-viewer-hide-style';
+  var FOLLOWING_HOME_HREF = 'https://www.instagram.com/?variant=following';
+  var NAV_HIDE_CLASS = 'irb-reels-nav-hidden';
+  var NAV_STYLE_ID = 'irb-reels-nav-hide-style';
 
   /** @type {boolean} */
   var blockReels = false;
-
+  /** @type {boolean} */
+  var blockForYou = true;
   /** @type {boolean} */
   var switchesReady = false;
 
-  /** @type {boolean} */
-  var extensionInitiatedNavigation = false;
-
-  /** @type {boolean} */
-  var reelsDestinationSession = false;
+  // ---------------------------------------------------------------------------
+  // Route helpers
+  // ---------------------------------------------------------------------------
 
   function isInstagramHost(hostname) {
     return hostname === 'www.instagram.com' || hostname === 'instagram.com';
   }
 
+  // Only the Reels discovery destination — never a single reel (`/reel/<id>/`,
+  // `/<user>/reel/<id>/`) or the in-feed reel viewer (`/reels/<id>/`).
   function isReelsDestinationPathname(pathname) {
     return pathname === '/reels' || pathname === '/reels/';
-  }
-
-  function isReelsViewerPathname(pathname) {
-    return /^\/reels\/[^/]+\/?$/.test(pathname);
-  }
-
-  function isReelsBlockedPathname(pathname) {
-    if (isReelsDestinationPathname(pathname)) {
-      return true;
-    }
-    return reelsDestinationSession && isReelsViewerPathname(pathname);
-  }
-
-  function isReelsBlockedRoute(loc) {
-    return isInstagramHost(loc.hostname) && isReelsBlockedPathname(loc.pathname);
   }
 
   function isReelsDestinationRoute(loc) {
@@ -49,123 +36,98 @@
       return false;
     }
     try {
-      var url = new URL(href, 'https://www.instagram.com');
+      var url = new URL(href, WWW_HOME_HREF);
       return isReelsDestinationPathname(url.pathname);
     } catch (err) {
       return false;
     }
   }
 
-  function syncReelsDestinationSession() {
-    if (!blockReels) {
-      reelsDestinationSession = false;
-      return;
-    }
-    if (isReelsDestinationPathname(window.location.pathname)) {
-      reelsDestinationSession = true;
-      return;
-    }
-    if (
-      window.location.pathname === '/' ||
-      window.location.pathname === ''
-    ) {
-      reelsDestinationSession = false;
-      return;
-    }
-    if (!isReelsViewerPathname(window.location.pathname)) {
-      reelsDestinationSession = false;
-    }
-  }
+  // ---------------------------------------------------------------------------
+  // Sidebar Reels icon — hidden via a toggled class so it tracks re-renders
+  // without an observer. Only the exact `/reels/` (or `/reels`) link matches,
+  // i.e. the left-nav entry — never a `/reels/<id>/` or `/reels/audio/...` link.
+  // ---------------------------------------------------------------------------
 
-  function navigateToHome() {
-    extensionInitiatedNavigation = true;
-    var testNavigate = globalThis.__IRB_NAVIGATE_WWW_HOME__;
-    if (typeof testNavigate === 'function') {
-      testNavigate(WWW_HOME_HREF);
-      return;
-    }
-    window.location.replace(WWW_HOME_HREF);
-  }
-
-  function ensureHideStyle() {
-    if (document.getElementById(STYLE_ID)) {
+  function ensureNavHideStyle() {
+    if (document.getElementById(NAV_STYLE_ID)) {
       return;
     }
     var style = document.createElement('style');
-    style.id = STYLE_ID;
+    style.id = NAV_STYLE_ID;
     style.textContent =
-      'html.' + HIDE_CLASS + ' > body { visibility: hidden !important; }';
+      'html.' + NAV_HIDE_CLASS + ' a[href="/reels/"],' +
+      'html.' + NAV_HIDE_CLASS + ' a[href="/reels"],' +
+      'html.' + NAV_HIDE_CLASS + ' a[href="https://www.instagram.com/reels/"],' +
+      'html.' + NAV_HIDE_CLASS + ' a[href="https://www.instagram.com/reels"]' +
+      ' { display: none !important; }';
     var parent = document.documentElement || document.head || document;
     parent.appendChild(style);
   }
 
-  function setReelsHidden(hidden) {
+  function applyNavVisibility() {
     var root = document.documentElement;
     if (!root) {
       return;
     }
-    if (hidden) {
-      root.classList.add(HIDE_CLASS);
+    if (switchesReady && blockReels) {
+      root.classList.add(NAV_HIDE_CLASS);
     } else {
-      root.classList.remove(HIDE_CLASS);
+      root.classList.remove(NAV_HIDE_CLASS);
     }
   }
 
-  function shouldHideReelsSurface() {
-    if (!isReelsBlockedRoute(window.location)) {
-      return false;
-    }
-    if (!switchesReady) {
-      return true;
-    }
-    return blockReels;
+  // The home feed to land on must match the current Block For you state, so the
+  // single redirect already carries the right variant and there is no second
+  // hop through the home blocker.
+  function homeTarget() {
+    return blockForYou ? FOLLOWING_HOME_HREF : WWW_HOME_HREF;
   }
 
-  function commitLeaveReels() {
-    if (!switchesReady || !blockReels) {
+  function navigateToHome() {
+    var testNavigate = globalThis.__IRB_NAVIGATE_WWW_HOME__;
+    if (typeof testNavigate === 'function') {
+      testNavigate(homeTarget());
       return;
     }
-    if (!isReelsBlockedRoute(window.location)) {
-      return;
-    }
-    navigateToHome();
+    window.location.replace(homeTarget());
   }
+
+  // ---------------------------------------------------------------------------
+  // Sync
+  // ---------------------------------------------------------------------------
 
   function syncReelsViewerBlock() {
-    if (!window || !window.location) {
+    if (!switchesReady || !blockReels || !window || !window.location) {
       return;
     }
-    ensureHideStyle();
-    syncReelsDestinationSession();
-    commitLeaveReels();
-    setReelsHidden(shouldHideReelsSurface());
-  }
-
-  function onNavigation() {
-    extensionInitiatedNavigation = false;
-    syncReelsViewerBlock();
-    var home = globalThis.__IRB_HOME_FOR_YOU__;
-    if (home && typeof home.sync === 'function') {
-      home.sync();
+    if (isReelsDestinationRoute(window.location)) {
+      navigateToHome();
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // Navigation hooks
+  // ---------------------------------------------------------------------------
 
   function interceptHistory() {
     var originalPush = history.pushState;
     var originalReplace = history.replaceState;
-    history.pushState = function pushStateWrapper(state, title, url) {
+    history.pushState = function pushStateWrapper() {
       var result = originalPush.apply(this, arguments);
-      onNavigation();
+      syncReelsViewerBlock();
       return result;
     };
-    history.replaceState = function replaceStateWrapper(state, title, url) {
+    history.replaceState = function replaceStateWrapper() {
       var result = originalReplace.apply(this, arguments);
-      onNavigation();
+      syncReelsViewerBlock();
       return result;
     };
-    window.addEventListener('popstate', onNavigation);
+    window.addEventListener('popstate', syncReelsViewerBlock);
   }
 
+  // Send in-app clicks on the sidebar Reels control straight home so the viewer
+  // never appears.
   function installReelsSidebarHook() {
     document.addEventListener(
       'click',
@@ -178,49 +140,47 @@
           return;
         }
         var link = target.closest('a[href]');
-        if (!link) {
-          return;
-        }
-        var href = link.getAttribute('href');
-        if (!isReelsSidebarHref(href)) {
+        if (!link || !isReelsSidebarHref(link.getAttribute('href'))) {
           return;
         }
         event.preventDefault();
         event.stopPropagation();
         navigateToHome();
-        queueMicrotask(onNavigation);
       },
       true,
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Public interface
+  // ---------------------------------------------------------------------------
+
   function setBlockReels(on) {
     blockReels = on !== false;
+    switchesReady = true;
+    applyNavVisibility();
     syncReelsViewerBlock();
   }
 
   function applySwitchesFromStorage(switches) {
     blockReels = switches.blockReels !== false;
-    if (switchesReady) {
-      syncReelsViewerBlock();
-      return;
-    }
+    blockForYou = switches.blockForYou !== false;
     switchesReady = true;
+    applyNavVisibility();
     syncReelsViewerBlock();
   }
 
-  ensureHideStyle();
+  ensureNavHideStyle();
   interceptHistory();
   installReelsSidebarHook();
-  syncReelsViewerBlock();
 
   globalThis.__IRB_REELS_VIEWER__ = {
     setBlockReels: setBlockReels,
     applySwitchesFromStorage: applySwitchesFromStorage,
     sync: syncReelsViewerBlock,
     isReelsDestinationRoute: isReelsDestinationRoute,
-    isReelsBlockedRoute: isReelsBlockedRoute,
     isReelsSidebarHref: isReelsSidebarHref,
+    NAV_HIDE_CLASS: NAV_HIDE_CLASS,
     isSwitchesReady: function () {
       return switchesReady;
     },
