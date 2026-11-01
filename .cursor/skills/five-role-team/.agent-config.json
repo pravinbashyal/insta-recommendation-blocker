@@ -1,0 +1,20 @@
+{
+  "agents": [
+    "architect",
+    "designer",
+    "worker",
+    "reviewer",
+    "supervisor",
+    "intern"
+  ],
+  "models": {
+    "architect": "grok-4.7-high-fast",
+    "designer": "grok-4.7-high-fast",
+    "worker": "composer-2.5-fast",
+    "reviewer": "grok-4.7-high-fast",
+    "supervisor": "grok-4.7-high-fast",
+    "intern": "beam:cloud"
+  },
+  "harness": "cursor",
+  "installedAt": "2026-11-01T14:10:00.629Z"
+}
