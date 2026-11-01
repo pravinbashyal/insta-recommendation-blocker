@@ -19,7 +19,7 @@
 
 ## 5. Cross-toggle integration
 
-- [ ] 5.1 Verify the three behaviors together in one fixture session: turning off one switch restores only that surface while the other two stay blocked, and `https://www.instagram.com/direct/inbox/`, `https://www.instagram.com/<username>/`, and `https://www.instagram.com/p/<shortcode>/` still load under every combination of the switches.
+- [x] 5.1 Verify the three behaviors together in one fixture session: turning off one switch restores only that surface while the other two stay blocked, and `https://www.instagram.com/direct/inbox/`, `https://www.instagram.com/<username>/`, and `https://www.instagram.com/p/<shortcode>/` still load under every combination of the switches.
 
 ## Workflow follow-up
 

@@ -6,7 +6,7 @@
     "test": "test"
   },
   "scripts": {
-    "test": "node test/task-1.1-verify.mjs && node test/task-1.2-verify.mjs && node test/task-2.1-verify.mjs && node test/task-3.1-verify.mjs && node test/task-4.1-verify.mjs"
+    "test": "node test/task-1.1-verify.mjs && node test/task-1.2-verify.mjs && node test/task-2.1-verify.mjs && node test/task-3.1-verify.mjs && node test/task-4.1-verify.mjs && node test/task-5.1-verify.mjs"
   },
   "keywords": [],
   "author": "",
