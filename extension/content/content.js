@@ -31,6 +31,17 @@
     root.dataset.irbBlockExploreContents = String(switches.blockExploreContents);
   }
 
+  function applyHomeForYouBlock(switches) {
+    var home = globalThis.__IRB_HOME_FOR_YOU__;
+    if (home && typeof home.applySwitchesFromStorage === 'function') {
+      home.applySwitchesFromStorage(switches);
+      return;
+    }
+    if (home && typeof home.setBlockForYou === 'function') {
+      home.setBlockForYou(switches.blockForYou);
+    }
+  }
+
   function applySwitchesToDocument(switches) {
     var root = document.documentElement;
     if (!root) {
@@ -39,12 +50,15 @@
     }
     pendingSwitches = null;
     writeDataset(root, switches);
+    applyHomeForYouBlock(switches);
   }
 
   function flushPendingSwitches() {
     if (pendingSwitches && document.documentElement) {
-      writeDataset(document.documentElement, pendingSwitches);
+      var switches = pendingSwitches;
       pendingSwitches = null;
+      writeDataset(document.documentElement, switches);
+      applyHomeForYouBlock(switches);
     }
   }
 

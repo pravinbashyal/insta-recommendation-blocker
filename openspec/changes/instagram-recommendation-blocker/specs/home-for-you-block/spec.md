@@ -33,8 +33,12 @@ While `Block For you` is on, Explore's own tablist and grid SHALL stay as Instag
 - **THEN** those Explore tabs and the Explore recommendation grid stay as Instagram shows them; `Block For you` applies only to the home route's tablist
 
 #### Scenario: [interaction] Favorites on the home tablist stays available while Block For you is on
-- **WHEN** `Block For you` is on and the home-feed `role="tablist"` also contains a Favorites tab, or the person opens `https://www.instagram.com/?variant=favorites`
-- **THEN** Favorites still loads and its tab remains selectable. This desktop session did not show a Favorites tab; the scenario applies only if Instagram presents one
+- **WHEN** `Block For you` is on and the address is `https://www.instagram.com/?variant=favorites` (unrelated query params allowed), including after Instagram updates the URL when the person selects Favorites
+- **THEN** Favorites still loads, its tab stays selected, For you is absent from that tablist if Instagram had shown it, and the extension does not force `?variant=following` or select Following over Favorites. Leave-alone is keyed only to `variant=favorites` in the address — not to a Favorites click or `aria-selected` while the address is still `/` or `?variant=following`
+
+#### Scenario: [interaction] Home Following still wins when Favorites is only stale-selected
+- **WHEN** `Block For you` is on and the person opens or returns to `https://www.instagram.com/` or `https://www.instagram.com/?variant=following` (unrelated query params allowed) while the home tablist still has a Favorites tab whose `aria-selected` is true from an earlier paint or click, and the address is not `?variant=favorites`
+- **THEN** the address is the Following variant (unrelated params kept), Following is the selected tab, Favorites remains in the tablist as a selectable tab that is not selected, For you is absent, and the Following feed is revealed. The extension does not track Favorites clicks separately from the URL
 
 #### Scenario: [interaction] Logged-out instagram.com still reaches Instagram login while Block For you is on
 - **WHEN** `Block For you` is on and a logged-out person opens `https://www.instagram.com/`
@@ -48,5 +52,5 @@ While `Block For you` is off, `/` SHALL stay on Instagram's For you feed with th
 - **THEN** the home-feed `role="tablist"` includes For you and Following, For you is selected on `/`, the extension leaves `/` on Instagram's For you feed, and the For you tab can be used
 
 #### Scenario: [interaction] Following still works through Instagram while Block For you is off
-- **WHEN** `Block For you` is off and the person selects the Following tab in the home-feed tablist, or opens `https://www.instagram.com/?variant=following`
-- **THEN** Instagram's own Following feed loads and stays on that URL; the extension does not remove the For you tab and does not force `/` onto `?variant=following`
+- **WHEN** `Block For you` is off and the person selects the Following tab in the home-feed tablist, or opens `https://www.instagram.com/?variant=following` (including after visiting Favorites or another Instagram route in the same session)
+- **THEN** Instagram's own Following feed loads and stays on that URL; the extension does not remove the For you tab, does not strip that Following URL, and does not force `/` onto `?variant=following`. Any record that the extension earlier wrote Following is document-local and MUST NOT survive in extension storage to rewrite a later user-chosen Following URL

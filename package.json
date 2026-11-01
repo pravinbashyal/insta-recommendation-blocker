@@ -1,0 +1,17 @@
+{
+  "name": "insta-recommendation-blocker",
+  "version": "1.0.0",
+  "type": "module",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "node test/task-1.1-verify.mjs && node test/task-1.2-verify.mjs && node test/task-2.1-verify.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "jsdom": "^25.0.1"
+  }
+}

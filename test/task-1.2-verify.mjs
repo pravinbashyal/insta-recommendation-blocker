@@ -18,11 +18,13 @@ const REQUIRED_SHARED_ENTRIES = ['manifest.json', 'popup', 'content', 'lib'];
 
 const BLOCKING_LOGIC_FILES = [
   'content/content.js',
+  'content/home-for-you-block.js',
   'popup/popup.html',
   'popup/popup.js',
   'popup/popup.css',
   'lib/browser-storage.js',
   'lib/switch-logic.js',
+  'lib/home-for-you-block.js',
 ];
 
 /** Xcode SRCROOT: directory that contains the .xcodeproj bundle. */
@@ -287,7 +289,10 @@ function assertSharedManifestMatchesSafariBundleLayout() {
     fs.readFileSync(path.join(extensionDir, 'manifest.json'), 'utf8'),
   );
   assert.equal(manifest.action.default_popup, 'popup/popup.html');
-  assert.equal(manifest.content_scripts[0].js[0], 'content/content.js');
+  assert.deepEqual(manifest.content_scripts[0].js, [
+    'content/home-for-you-block.js',
+    'content/content.js',
+  ]);
 }
 
 assertSafariProjectExists();

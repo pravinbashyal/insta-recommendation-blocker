@@ -49,7 +49,11 @@ Alternative considered: a network redirect of `/` to `/?variant=following` and o
 
 While a switch is on, the script hides that switch's surface until the correct state is committed, then reveals it. For home, that means the address is the Following variant (unrelated query params kept) and the home tablist has no For you tab before the feed is shown. For Reels, the viewer is not shown on the way to `https://www.instagram.com/`. For Explore, the discovery grids are not shown or scrollable; the search input stays. If one browser cannot meet that, amend the affected scenario in the open rather than dropping the requirement.
 
+Home URL rewrites wait for the first `storage.local` switch read. Hiding before that read is fine. An apex host may `location.replace` to `www` Following only after that read says `Block For you` is on. Whether this document wrote Following is kept in page memory only — not in extension storage — so turning the switch off undoes Following on this document, and a later user-chosen Following URL while the switch is off is never stripped by a stale marker.
+
 Alternative considered: mutate the page after it paints. Rejected because the specs require no visible flash of For you posts, a selected For you tab, the Reels viewer, or the Explore grid.
+
+Alternative considered: persist an "extension committed Following" bit in `storage.local` so a fresh `www` document after an apex replace can undo Following when the switch is off. Rejected: waiting for the first storage read before any rewrite already prevents writing Following when the switch is off, and a stored marker later strips a user-chosen Following URL.
 
 ### Local switches, missing key means on
 
@@ -63,7 +67,7 @@ The manifest requests `storage` and host access `*://*.instagram.com/*` only. Th
 
 ### Stable hooks are the URL and the role
 
-Home vs Explore is decided by the route, not by the words "For you", because both pages have a For you tab. The home script touches only the home-feed `role="tablist"`. It removes the For you tab rather than leaving it disabled, and it leaves a Favorites tab alone when Instagram presents one. Explore's For you and Not personalized tabs follow `Block Explore contents` only. Obfuscated class names are not the contract. Search stays usable by leaving the search input and account result rows in place while content grids are hidden.
+Home vs Explore is decided by the route, not by the words "For you", because both pages have a For you tab. The home script touches only the home-feed `role="tablist"`. It removes the For you tab rather than leaving it disabled. Favorites leave-alone is URL-only: when the address is `?variant=favorites`, do not force Following over Favorites. On `/` or `?variant=following` while `Block For you` is on, Following must be selected and the feed revealed even if Favorites is still in the tablist with a stale or click-driven selected state — do not keep a separate Favorites-click flag. Explore's For you and Not personalized tabs follow `Block Explore contents` only. Obfuscated class names are not the contract. Search stays usable by leaving the search input and account result rows in place while content grids are hidden.
 
 ### One Manifest V3 package, Safari loads the same files
 
