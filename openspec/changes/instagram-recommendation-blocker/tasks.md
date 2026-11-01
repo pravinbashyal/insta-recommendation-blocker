@@ -3,7 +3,7 @@
 ## 1. Extension shell
 
 - [x] 1.1 Build the shared Manifest V3 package for Chromium and Firefox: one manifest with Firefox `browser_specific_settings.gecko`, a toolbar popup whose switches are `Block For you`, `Block Reels`, and `Block Explore contents` in that order, local storage where a missing key means on, a document-start content script on `*://*.instagram.com/*` that reads those switches and hears storage changes, and permissions limited to `storage` plus that host. Verify by loading it unpacked in Chromium: the popup shows those three switches all on, a flip survives a browser restart, the manifest has no other permission or host, and a fixture shows a missing key is on and an open-tab listener sees a storage change without a reinstall.
-- [ ] 1.2 Add a Safari web-extension target that loads the same popup, storage, and content-script files as the shared manifest, with no second copy of the blocking logic. Verify the Safari target references that shared directory. Safari's per-site allow for instagram.com stays the browser's install step.
+- [x] 1.2 Add a Safari web-extension target that loads the same popup, storage, and content-script files as the shared manifest, with no second copy of the blocking logic. Verify the Safari target references that shared directory. Safari's per-site allow for instagram.com stays the browser's install step.
 
 ## 2. Home For you
 
