@@ -75,4 +75,4 @@ Fixture checks cover home, Reels, Explore, and cross-toggle behavior without a l
 
 ## License
 
-Private for now — not published to any store yet.
+MIT — see [LICENSE](LICENSE).
