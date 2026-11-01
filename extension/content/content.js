@@ -53,9 +53,21 @@
     }
   }
 
+  function applyExploreDiscoveryBlock(switches) {
+    var explore = globalThis.__IRB_EXPLORE_DISCOVERY__;
+    if (explore && typeof explore.applySwitchesFromStorage === 'function') {
+      explore.applySwitchesFromStorage(switches);
+      return;
+    }
+    if (explore && typeof explore.setBlockExploreContents === 'function') {
+      explore.setBlockExploreContents(switches.blockExploreContents);
+    }
+  }
+
   function applyBlockingSwitches(switches) {
     applyHomeForYouBlock(switches);
     applyReelsViewerBlock(switches);
+    applyExploreDiscoveryBlock(switches);
   }
 
   function applySwitchesToDocument(switches) {

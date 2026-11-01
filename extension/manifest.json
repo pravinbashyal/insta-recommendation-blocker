@@ -15,6 +15,7 @@
       "js": [
         "content/home-for-you-block.js",
         "content/reels-viewer-block.js",
+        "content/explore-discovery-block.js",
         "content/content.js"
       ],
       "run_at": "document_start"

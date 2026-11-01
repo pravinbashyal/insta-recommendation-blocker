@@ -123,7 +123,8 @@ function assertManifestLoadsHomeScriptFirst() {
   const scripts = manifest.content_scripts[0].js;
   assert.equal(scripts[0], 'content/home-for-you-block.js');
   assert.equal(scripts[1], 'content/reels-viewer-block.js');
-  assert.equal(scripts[2], 'content/content.js');
+  assert.equal(scripts[2], 'content/explore-discovery-block.js');
+  assert.equal(scripts[3], 'content/content.js');
 }
 
 function assertPureUrlHelpers() {

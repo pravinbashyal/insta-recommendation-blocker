@@ -209,6 +209,7 @@ async function assertReelsRouteHidesBeforeRedirect() {
   assert.deepEqual(scriptOrder, [
     'content/home-for-you-block.js',
     'content/reels-viewer-block.js',
+    'content/explore-discovery-block.js',
     'content/content.js',
   ]);
 

@@ -15,7 +15,7 @@
 
 ## 4. Explore contents
 
-- [ ] 4.1 Implement `explore-discovery-block` in the shared content script: stay on Explore, keep the search input and account results usable, and hide recommendation grids and keyword, hashtag, and place content grids so they cannot be scrolled. Verify with fixtures: `/explore/`, both Explore tabs, sidebar Search, choosing an account through to `/<username>/`, `explore/search/keyword/?q=`, a hashtag grid, a place grid, and `Block Explore contents` off restoring the grid. This switch stays independent of `Block For you`.
+- [x] 4.1 Implement `explore-discovery-block` in the shared content script: stay on Explore, keep the search input and account results usable, and hide recommendation grids and keyword, hashtag, and place content grids so they cannot be scrolled. Verify with fixtures: `/explore/`, both Explore tabs, sidebar Search, choosing an account through to `/<username>/`, `explore/search/keyword/?q=`, a hashtag grid, a place grid, and `Block Explore contents` off restoring the grid. This switch stays independent of `Block For you`.
 
 ## 5. Cross-toggle integration
 

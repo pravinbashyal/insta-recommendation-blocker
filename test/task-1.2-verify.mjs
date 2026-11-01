@@ -20,6 +20,7 @@ const BLOCKING_LOGIC_FILES = [
   'content/content.js',
   'content/home-for-you-block.js',
   'content/reels-viewer-block.js',
+  'content/explore-discovery-block.js',
   'popup/popup.html',
   'popup/popup.js',
   'popup/popup.css',
@@ -27,6 +28,7 @@ const BLOCKING_LOGIC_FILES = [
   'lib/switch-logic.js',
   'lib/home-for-you-block.js',
   'lib/reels-viewer-block.js',
+  'lib/explore-discovery-block.js',
 ];
 
 /** Xcode SRCROOT: directory that contains the .xcodeproj bundle. */
@@ -294,6 +296,7 @@ function assertSharedManifestMatchesSafariBundleLayout() {
   assert.deepEqual(manifest.content_scripts[0].js, [
     'content/home-for-you-block.js',
     'content/reels-viewer-block.js',
+    'content/explore-discovery-block.js',
     'content/content.js',
   ]);
 }
