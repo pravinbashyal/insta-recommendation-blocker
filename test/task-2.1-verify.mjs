@@ -185,6 +185,9 @@ function bootContentSession(html, href, storageBundle) {
   });
   const { window } = dom;
   window.chrome = storageBundle.chrome;
+  installWwwHomeNavigation(window, (url) => {
+    dom.reconfigure({ url: String(url) });
+  });
   window.eval(`${fs.readFileSync(homeScriptPath, 'utf8')}\n//# sourceURL=home-for-you-block.js`);
   window.eval(`${fs.readFileSync(contentScriptPath, 'utf8')}\n//# sourceURL=content.js`);
   openDomSessions.push({ dom, api: window.__IRB_HOME_FOR_YOU__ });
@@ -749,7 +752,9 @@ async function assertContentScriptWiresHomeBlock() {
     runScripts: 'outside-only',
   });
   const { window } = dom;
-  installWwwHomeNavigation(window, dom);
+  installWwwHomeNavigation(window, (url) => {
+    dom.reconfigure({ url: String(url) });
+  });
   window.chrome = {
     storage: {
       local: storage,
@@ -778,7 +783,9 @@ async function assertContentScriptWiresHomeBlock() {
     runScripts: 'outside-only',
   });
   const windowOn = domOn.window;
-  installWwwHomeNavigation(windowOn, domOn);
+  installWwwHomeNavigation(windowOn, (url) => {
+    domOn.reconfigure({ url: String(url) });
+  });
   windowOn.chrome = {
     storage: {
       local: storage,

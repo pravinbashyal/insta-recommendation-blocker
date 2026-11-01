@@ -177,8 +177,17 @@ function findFollowingTab(tablist) {
   return null;
 }
 
+function getExplorePostTileLinks(window) {
+  return window.document.querySelectorAll(
+    'main a[href^="/p/"], main a[href^="/reel/"], main a[href^="/reels/"]',
+  );
+}
+
 function getExploreTileGrid(window) {
-  return window.document.querySelector('main [role="grid"]');
+  return (
+    window.document.querySelector('main [role="grid"]') ||
+    window.document.querySelector('[data-testid="explore-tile-feed"]')
+  );
 }
 
 async function navigateSession(window, dom, href, bodyKey) {
@@ -221,23 +230,30 @@ function assertHomeForYouRestored(window) {
 }
 
 function assertExploreGridHidden(window) {
-  const grid = getExploreTileGrid(window);
-  assert.ok(grid, 'expected explore tile grid in DOM');
-  assert.equal(window.getComputedStyle(grid).display, 'none');
+  const tiles = getExplorePostTileLinks(window);
+  assert.ok(tiles.length > 0, 'expected explore post/reel tile links in DOM');
+  for (const tile of tiles) {
+    assert.equal(window.getComputedStyle(tile).display, 'none');
+  }
 }
 
 function assertExploreGridVisible(window) {
-  const grid = getExploreTileGrid(window);
-  assert.ok(grid, 'expected explore tile grid in DOM');
-  assert.notEqual(window.getComputedStyle(grid).display, 'none');
+  const tiles = getExplorePostTileLinks(window);
+  assert.ok(tiles.length > 0, 'expected explore post/reel tile links in DOM');
+  for (const tile of tiles) {
+    assert.notEqual(window.getComputedStyle(tile).display, 'none');
+  }
   assert.equal(
     window.document.documentElement.classList.contains(EXPLORE_HIDE_CLASS),
     false,
   );
 }
 
-function assertReelsBlocked(window, navigatedTo) {
-  assert.equal(navigatedTo, WWW_HOME_HREF);
+function assertReelsBlocked(window, navigatedTo, blockForYou = true) {
+  assert.equal(
+    navigatedTo,
+    blockForYou ? 'https://www.instagram.com/?variant=following' : WWW_HOME_HREF,
+  );
   assert.match(window.location.pathname, /^\/?$/);
   assert.equal(window.document.documentElement.classList.contains('irb-reels-blocking'), false);
 }
@@ -290,7 +306,7 @@ async function assertCrossToggleIntegrationSession() {
   };
 
   await navigateSession(window, dom, 'https://www.instagram.com/reels/', 'reels');
-  assertReelsBlocked(window, navigatedTo);
+  assertReelsBlocked(window, navigatedTo, true);
 
   await applyAllSwitches(storageBundle, {
     blockForYou: false,
@@ -305,7 +321,7 @@ async function assertCrossToggleIntegrationSession() {
 
   navigatedTo = null;
   await navigateSession(window, dom, 'https://www.instagram.com/reels/', 'reels');
-  assertReelsBlocked(window, navigatedTo);
+  assertReelsBlocked(window, navigatedTo, false);
 
   await applyAllSwitches(storageBundle, {
     blockForYou: true,
@@ -320,7 +336,7 @@ async function assertCrossToggleIntegrationSession() {
 
   navigatedTo = null;
   await navigateSession(window, dom, 'https://www.instagram.com/reels/', 'reels');
-  assertReelsBlocked(window, navigatedTo);
+  assertReelsBlocked(window, navigatedTo, true);
 
   await applyAllSwitches(storageBundle, {
     blockForYou: true,

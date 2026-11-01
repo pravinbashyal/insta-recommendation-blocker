@@ -8,9 +8,12 @@ import { JSDOM } from 'jsdom';
 import {
   WWW_HOME_HREF,
   isProfileReelPathname,
+  isReelsBlockedPathname,
+  isReelsBlockedRoute,
   isReelsDestinationPathname,
   isReelsDestinationRoute,
   isReelsSidebarHref,
+  isReelsViewerPathname,
   isSingleReelPathname,
 } from '../extension/lib/reels-viewer-block.js';
 import { findForYouTab } from '../extension/lib/home-for-you-block.js';
@@ -164,6 +167,17 @@ function assertPureRouteHelpers() {
   assert.equal(isReelsDestinationPathname('/reels'), true);
   assert.equal(isReelsDestinationRoute({ hostname: 'www.instagram.com', pathname: '/reels/' }), true);
   assert.equal(isReelsDestinationPathname('/reel/ABC123/'), false);
+  assert.equal(isReelsViewerPathname('/reels/SHORT999/'), true);
+  assert.equal(isReelsViewerPathname('/reels/'), false);
+  assert.equal(isReelsBlockedPathname('/reels/SHORT999/', true), true);
+  assert.equal(isReelsBlockedPathname('/reels/SHORT999/', false), false);
+  assert.equal(
+    isReelsBlockedRoute(
+      { hostname: 'www.instagram.com', pathname: '/reels/SHORT999/' },
+      true,
+    ),
+    true,
+  );
 
   assert.equal(isSingleReelPathname('/reel/ABC123/'), true);
   assert.equal(isSingleReelPathname('/reels/'), false);
@@ -197,7 +211,7 @@ async function assertReelsDestinationLeavesForHome() {
     });
     await applySwitches(window, { blockReels: true, blockForYou: true });
 
-    assert.equal(navigatedTo, WWW_HOME_HREF);
+    assert.equal(navigatedTo, 'https://www.instagram.com/?variant=following');
     assert.equal(window.location.pathname, '/');
     assert.match(window.location.search, /variant=following/);
   }
@@ -258,7 +272,7 @@ async function assertSidebarReelsControlLeavesForHome() {
   reelsLink.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
   await settle();
 
-  assert.equal(navigatedTo, WWW_HOME_HREF);
+  assert.equal(navigatedTo, 'https://www.instagram.com/?variant=following');
   assert.equal(window.location.pathname, '/');
 }
 
@@ -276,7 +290,7 @@ async function assertHomeAfterReelsFollowsBlockForYou() {
   });
 
   await applySwitches(window, { blockReels: true, blockForYou: true });
-  assert.equal(navigatedTo, WWW_HOME_HREF);
+  assert.equal(navigatedTo, 'https://www.instagram.com/?variant=following');
 
   dom.window.document.body.innerHTML = new JSDOM(homeHtml).window.document.body.innerHTML;
   window.__IRB_HOME_FOR_YOU__.sync();
@@ -396,6 +410,49 @@ async function assertContentScriptWiresReelsBlock() {
   assert.equal(window.location.pathname, '/');
 }
 
+async function assertReelsViewerRedirectWithinSession() {
+  let navigatedTo = null;
+  let navigateCalls = 0;
+  const { window, dom } = createSession(
+    readFixture('reels-viewer.html'),
+    'https://www.instagram.com/reels/',
+  );
+  installWwwHomeNavigation(window, (url) => {
+    navigateCalls += 1;
+    navigatedTo = url;
+  });
+  await applySwitches(window, { blockReels: true, blockForYou: true });
+  assert.ok(navigateCalls >= 1);
+  assert.equal(window.location.pathname, '/reels/');
+
+  navigateCalls = 0;
+  navigatedTo = null;
+  window.history.pushState({}, '', 'https://www.instagram.com/reels/SHORT999/');
+  dom.reconfigure({ url: 'https://www.instagram.com/reels/SHORT999/' });
+  window.__IRB_REELS_VIEWER__.sync();
+  await settle();
+
+  assert.ok(navigateCalls >= 1);
+  assert.equal(navigatedTo, WWW_HOME_HREF);
+}
+
+async function assertDirectReelsViewerShortcodeStillLoads() {
+  /** @type {string | null} */
+  let navigatedTo = null;
+  const { window } = createSession(
+    readFixture('reels-viewer.html'),
+    'https://www.instagram.com/reels/SHORT999/',
+  );
+  installWwwHomeNavigation(window, (url) => {
+    navigatedTo = url;
+  });
+  await applySwitches(window, { blockReels: true, blockForYou: true });
+
+  assert.equal(navigatedTo, null);
+  assert.equal(window.location.pathname, '/reels/SHORT999/');
+  assert.ok(window.document.querySelector('[data-testid="reels-viewer"]'));
+}
+
 async function assertClientNavigationToReelsBlocked() {
   const { window, dom } = createSession(
     readFixture('reels-viewer.html'),
@@ -429,6 +486,8 @@ async function runTask31Verify() {
   await assertProfileReelsTabStillLoads();
   await assertHomeFeedReelPostRemains();
   await assertBlockReelsOffOpensViewer();
+  await assertReelsViewerRedirectWithinSession();
+  await assertDirectReelsViewerShortcodeStillLoads();
   await assertClientNavigationToReelsBlocked();
   await assertContentScriptWiresReelsBlock();
 

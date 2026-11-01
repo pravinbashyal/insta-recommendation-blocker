@@ -21,6 +21,15 @@ export function isReelsDestinationPathname(pathname) {
 }
 
 /**
+ * Full-screen Reels viewer after Instagram redirects from `/reels/`.
+ * @param {string} pathname
+ * @returns {boolean}
+ */
+export function isReelsViewerPathname(pathname) {
+  return /^\/reels\/[^/]+\/?$/.test(pathname);
+}
+
+/**
  * @param {{ hostname: string, pathname: string }} locationLike
  * @returns {boolean}
  */
@@ -28,6 +37,30 @@ export function isReelsDestinationRoute(locationLike) {
   return (
     isInstagramHost(locationLike.hostname) &&
     isReelsDestinationPathname(locationLike.pathname)
+  );
+}
+
+/**
+ * @param {string} pathname
+ * @param {boolean} reelsDestinationSession
+ * @returns {boolean}
+ */
+export function isReelsBlockedPathname(pathname, reelsDestinationSession) {
+  if (isReelsDestinationPathname(pathname)) {
+    return true;
+  }
+  return reelsDestinationSession && isReelsViewerPathname(pathname);
+}
+
+/**
+ * @param {{ hostname: string, pathname: string }} locationLike
+ * @param {boolean} reelsDestinationSession
+ * @returns {boolean}
+ */
+export function isReelsBlockedRoute(locationLike, reelsDestinationSession) {
+  return (
+    isInstagramHost(locationLike.hostname) &&
+    isReelsBlockedPathname(locationLike.pathname, reelsDestinationSession)
   );
 }
 

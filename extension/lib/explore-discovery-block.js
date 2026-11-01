@@ -10,10 +10,16 @@ export const EXPLORE_SEARCH_INPUT_TESTID = 'explore-search-input';
 export const EXPLORE_ACCOUNT_RESULT_TESTID = 'explore-search-account';
 
 /**
- * Post/reel tile grids on Explore (role hook; not search accounts or tablist).
+ * Post/reel tile surfaces on Explore (not search accounts, tablist, or search input).
+ * Live Explore often omits role="grid"; tile links use /p/, /reel/, or /reels/ paths.
  */
 export function exploreTileGridSelectorFragments() {
-  return ['main [role="grid"]'];
+  return [
+    'main [role="grid"]',
+    'main a[href^="/p/"]',
+    'main a[href^="/reel/"]',
+    'main a[href^="/reels/"]',
+  ];
 }
 
 /**

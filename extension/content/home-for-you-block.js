@@ -413,25 +413,10 @@
     }
     redirectGuard += 1;
     var nextSearch = buildCommittedHomeSearch(active, window.location.search);
+    var target = buildWwwHomeHref(nextSearch);
     extensionInitiatedNavigation = true;
-    if (window.location.hostname === 'instagram.com') {
-      var target = buildWwwHomeHref(nextSearch);
-      markExtensionCommittedFollowing(function () {
-        navigateToWwwHomeCanonical(target);
-      });
-      return;
-    }
-    if (!needsFollowingVariant(active, window.location.search)) {
-      redirectGuard -= 1;
-      extensionInitiatedNavigation = false;
-      return;
-    }
     markExtensionCommittedFollowing(function () {
-      history.replaceState(
-        history.state,
-        '',
-        window.location.pathname + nextSearch + window.location.hash,
-      );
+      navigateToWwwHomeCanonical(target);
     });
   }
 
@@ -572,6 +557,22 @@
         if (!link) {
           return;
         }
+        if (!switchesReady || !shouldRewriteLoggedInHome(blockForYou)) {
+          queueMicrotask(onNavigation);
+          return;
+        }
+        if (getVariant(window.location.search) === 'favorites') {
+          queueMicrotask(onNavigation);
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        redirectGuard += 1;
+        var homeTarget = buildWwwHomeHref(buildFollowingSearch(''));
+        extensionInitiatedNavigation = true;
+        markExtensionCommittedFollowing(function () {
+          navigateToWwwHomeCanonical(homeTarget);
+        });
         queueMicrotask(onNavigation);
       },
       true,

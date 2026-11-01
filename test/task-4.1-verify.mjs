@@ -87,6 +87,10 @@ function loadScripts(window) {
   window.eval(`${fs.readFileSync(exploreScriptPath, 'utf8')}\n//# sourceURL=explore-discovery-block.js`);
 }
 
+function installWwwHomeNavigation(window, handler) {
+  window.__IRB_NAVIGATE_WWW_HOME__ = handler;
+}
+
 async function applySwitches(window, switches) {
   window.__IRB_EXPLORE_DISCOVERY__.applySwitchesFromStorage(switches);
   window.__IRB_REELS_VIEWER__.applySwitchesFromStorage(switches);
@@ -105,6 +109,9 @@ function createSession(html, href, { chrome } = {}) {
   if (chrome) {
     window.chrome = chrome;
   }
+  installWwwHomeNavigation(window, (url) => {
+    dom.reconfigure({ url: String(url) });
+  });
 
   loadScripts(window);
 
@@ -122,6 +129,9 @@ function bootContentSession(html, href, storageBundle) {
   });
   const { window } = dom;
   window.chrome = storageBundle.chrome;
+  installWwwHomeNavigation(window, (url) => {
+    dom.reconfigure({ url: String(url) });
+  });
   loadScripts(window);
   window.eval(`${fs.readFileSync(contentScriptPath, 'utf8')}\n//# sourceURL=content.js`);
   openDomSessions.push({ dom, api: window.__IRB_HOME_FOR_YOU__ });
@@ -136,8 +146,17 @@ function closeDomSessions() {
   openDomSessions.length = 0;
 }
 
+function getExplorePostTileLinks(window) {
+  return window.document.querySelectorAll(
+    'main a[href^="/p/"], main a[href^="/reel/"], main a[href^="/reels/"]',
+  );
+}
+
 function getExploreTileGrid(window) {
-  return window.document.querySelector('main [role="grid"]');
+  return (
+    window.document.querySelector('main [role="grid"]') ||
+    window.document.querySelector('[data-testid="explore-tile-feed"]')
+  );
 }
 
 function assertElementVisible(window, testid) {
@@ -147,15 +166,27 @@ function assertElementVisible(window, testid) {
 }
 
 function assertTileGridHidden(window) {
-  const el = getExploreTileGrid(window);
-  assert.ok(el, 'expected main [role="grid"] tile container in DOM');
-  assert.equal(window.getComputedStyle(el).display, 'none');
+  const tiles = getExplorePostTileLinks(window);
+  assert.ok(tiles.length > 0, 'expected explore post/reel tile links in DOM');
+  for (const tile of tiles) {
+    assert.equal(
+      window.getComputedStyle(tile).display,
+      'none',
+      `tile link should be hidden: ${tile.getAttribute('href')}`,
+    );
+  }
+  const grid = window.document.querySelector('main [role="grid"]');
+  if (grid) {
+    assert.equal(window.getComputedStyle(grid).display, 'none');
+  }
 }
 
 function assertTileGridVisible(window) {
-  const el = getExploreTileGrid(window);
-  assert.ok(el, 'expected main [role="grid"] tile container in DOM');
-  assert.notEqual(window.getComputedStyle(el).display, 'none');
+  const tiles = getExplorePostTileLinks(window);
+  assert.ok(tiles.length > 0, 'expected explore post/reel tile links in DOM');
+  for (const tile of tiles) {
+    assert.notEqual(window.getComputedStyle(tile).display, 'none');
+  }
 }
 
 function assertExploreBlockingClass(window, expected) {
@@ -223,7 +254,7 @@ async function assertExploreRouteHidesGridBeforeStorage() {
   assert.equal(window.__IRB_EXPLORE_DISCOVERY__.isSwitchesReady(), false);
   assertExploreBlockingClass(window, true);
   assertTileGridHidden(window);
-  assert.ok(!getExploreTileGrid(window)?.hasAttribute('data-testid'));
+  assert.equal(window.document.querySelector('main [role="grid"]'), null);
   dom.window.close();
 }
 

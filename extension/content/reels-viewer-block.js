@@ -14,12 +14,30 @@
   /** @type {boolean} */
   var extensionInitiatedNavigation = false;
 
+  /** @type {boolean} */
+  var reelsDestinationSession = false;
+
   function isInstagramHost(hostname) {
     return hostname === 'www.instagram.com' || hostname === 'instagram.com';
   }
 
   function isReelsDestinationPathname(pathname) {
     return pathname === '/reels' || pathname === '/reels/';
+  }
+
+  function isReelsViewerPathname(pathname) {
+    return /^\/reels\/[^/]+\/?$/.test(pathname);
+  }
+
+  function isReelsBlockedPathname(pathname) {
+    if (isReelsDestinationPathname(pathname)) {
+      return true;
+    }
+    return reelsDestinationSession && isReelsViewerPathname(pathname);
+  }
+
+  function isReelsBlockedRoute(loc) {
+    return isInstagramHost(loc.hostname) && isReelsBlockedPathname(loc.pathname);
   }
 
   function isReelsDestinationRoute(loc) {
@@ -35,6 +53,27 @@
       return isReelsDestinationPathname(url.pathname);
     } catch (err) {
       return false;
+    }
+  }
+
+  function syncReelsDestinationSession() {
+    if (!blockReels) {
+      reelsDestinationSession = false;
+      return;
+    }
+    if (isReelsDestinationPathname(window.location.pathname)) {
+      reelsDestinationSession = true;
+      return;
+    }
+    if (
+      window.location.pathname === '/' ||
+      window.location.pathname === ''
+    ) {
+      reelsDestinationSession = false;
+      return;
+    }
+    if (!isReelsViewerPathname(window.location.pathname)) {
+      reelsDestinationSession = false;
     }
   }
 
@@ -73,7 +112,7 @@
   }
 
   function shouldHideReelsSurface() {
-    if (!isReelsDestinationRoute(window.location)) {
+    if (!isReelsBlockedRoute(window.location)) {
       return false;
     }
     if (!switchesReady) {
@@ -86,7 +125,7 @@
     if (!switchesReady || !blockReels) {
       return;
     }
-    if (!isReelsDestinationRoute(window.location)) {
+    if (!isReelsBlockedRoute(window.location)) {
       return;
     }
     navigateToHome();
@@ -97,6 +136,7 @@
       return;
     }
     ensureHideStyle();
+    syncReelsDestinationSession();
     commitLeaveReels();
     setReelsHidden(shouldHideReelsSurface());
   }
@@ -179,6 +219,7 @@
     applySwitchesFromStorage: applySwitchesFromStorage,
     sync: syncReelsViewerBlock,
     isReelsDestinationRoute: isReelsDestinationRoute,
+    isReelsBlockedRoute: isReelsBlockedRoute,
     isReelsSidebarHref: isReelsSidebarHref,
     isSwitchesReady: function () {
       return switchesReady;

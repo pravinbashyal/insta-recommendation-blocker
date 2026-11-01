@@ -27,7 +27,12 @@
   }
 
   function exploreTileGridSelectorFragments() {
-    return ['main [role="grid"]'];
+    return [
+      'main [role="grid"]',
+      'main a[href^="/p/"]',
+      'main a[href^="/reel/"]',
+      'main a[href^="/reels/"]',
+    ];
   }
 
   function buildHideCssRule() {
