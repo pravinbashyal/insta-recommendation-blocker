@@ -122,7 +122,8 @@ function assertManifestLoadsHomeScriptFirst() {
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
   const scripts = manifest.content_scripts[0].js;
   assert.equal(scripts[0], 'content/home-for-you-block.js');
-  assert.equal(scripts[1], 'content/content.js');
+  assert.equal(scripts[1], 'content/reels-viewer-block.js');
+  assert.equal(scripts[2], 'content/content.js');
 }
 
 function assertPureUrlHelpers() {
@@ -675,7 +676,7 @@ function assertPendingFlushAppliesHomeSwitches() {
   const contentSrc = fs.readFileSync(contentScriptPath, 'utf8');
   assert.match(
     contentSrc,
-    /function flushPendingSwitches\(\) \{[\s\S]*applyHomeForYouBlock\(switches\)/,
+    /function flushPendingSwitches\(\) \{[\s\S]*applyBlockingSwitches\(switches\)/,
   );
 }
 

@@ -42,6 +42,22 @@
     }
   }
 
+  function applyReelsViewerBlock(switches) {
+    var reels = globalThis.__IRB_REELS_VIEWER__;
+    if (reels && typeof reels.applySwitchesFromStorage === 'function') {
+      reels.applySwitchesFromStorage(switches);
+      return;
+    }
+    if (reels && typeof reels.setBlockReels === 'function') {
+      reels.setBlockReels(switches.blockReels);
+    }
+  }
+
+  function applyBlockingSwitches(switches) {
+    applyHomeForYouBlock(switches);
+    applyReelsViewerBlock(switches);
+  }
+
   function applySwitchesToDocument(switches) {
     var root = document.documentElement;
     if (!root) {
@@ -50,7 +66,7 @@
     }
     pendingSwitches = null;
     writeDataset(root, switches);
-    applyHomeForYouBlock(switches);
+    applyBlockingSwitches(switches);
   }
 
   function flushPendingSwitches() {
@@ -58,7 +74,7 @@
       var switches = pendingSwitches;
       pendingSwitches = null;
       writeDataset(document.documentElement, switches);
-      applyHomeForYouBlock(switches);
+      applyBlockingSwitches(switches);
     }
   }
 

@@ -11,7 +11,7 @@
 
 ## 3. Reels
 
-- [ ] 3.1 Implement `reels-viewer-block` in the shared content script: `/reels/` and a sidebar control that navigates there leave for `https://www.instagram.com/` with no watchable pass through the viewer, and the home feed then follows the current `Block For you` state. Verify with fixtures: trailing slash and unrelated query params, the sidebar control, `/reel/<shortcode>/` and `/<username>/reel/<shortcode>/` and a profile Reels tab still loading, a reel-format post remaining on the home feed, and `Block Reels` off opening the viewer.
+- [x] 3.1 Implement `reels-viewer-block` in the shared content script: `/reels/` and a sidebar control that navigates there leave for `https://www.instagram.com/` with no watchable pass through the viewer, and the home feed then follows the current `Block For you` state. Verify with fixtures: trailing slash and unrelated query params, the sidebar control, `/reel/<shortcode>/` and `/<username>/reel/<shortcode>/` and a profile Reels tab still loading, a reel-format post remaining on the home feed, and `Block Reels` off opening the viewer.
 
 ## 4. Explore contents
 

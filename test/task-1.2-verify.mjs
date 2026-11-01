@@ -19,12 +19,14 @@ const REQUIRED_SHARED_ENTRIES = ['manifest.json', 'popup', 'content', 'lib'];
 const BLOCKING_LOGIC_FILES = [
   'content/content.js',
   'content/home-for-you-block.js',
+  'content/reels-viewer-block.js',
   'popup/popup.html',
   'popup/popup.js',
   'popup/popup.css',
   'lib/browser-storage.js',
   'lib/switch-logic.js',
   'lib/home-for-you-block.js',
+  'lib/reels-viewer-block.js',
 ];
 
 /** Xcode SRCROOT: directory that contains the .xcodeproj bundle. */
@@ -291,6 +293,7 @@ function assertSharedManifestMatchesSafariBundleLayout() {
   assert.equal(manifest.action.default_popup, 'popup/popup.html');
   assert.deepEqual(manifest.content_scripts[0].js, [
     'content/home-for-you-block.js',
+    'content/reels-viewer-block.js',
     'content/content.js',
   ]);
 }
