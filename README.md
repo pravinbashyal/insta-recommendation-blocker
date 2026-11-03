@@ -20,12 +20,12 @@ This extension isn't in the Chrome Web Store or Firefox Add-ons yet, so you inst
 
 ### Step 1 — Download and unzip the extension
 
-1. **[⬇️ Click here to download the ZIP](https://github.com/pravinbashyal/insta-recommendation-blocker/archive/refs/heads/main.zip)**
-2. Find the downloaded file (usually in your **Downloads** folder). It's called `insta-recommendation-blocker-main.zip`.
+1. **[⬇️ Click here to download the extension](https://github.com/pravinbashyal/insta-recommendation-blocker/releases/latest/download/instagram-recommendation-blocker.zip)**
+2. Find the downloaded file (usually in your **Downloads** folder). It's called `instagram-recommendation-blocker.zip`.
 3. **Unzip it:**
    - **Windows:** right-click the file → **Extract All…** → **Extract**.
    - **Mac:** double-click the file.
-4. You now have a folder called `insta-recommendation-blocker-main`. Inside it is a folder named **`extension`** — that's the one you'll point your browser at in the next step.
+4. You now have a folder called **`instagram-recommendation-blocker`**. That's the folder you'll point your browser at in the next step.
 
 > 💡 Keep this folder somewhere you won't delete it (e.g. Documents). The extension runs from these files, so if you move them to the trash it stops working.
 
@@ -38,8 +38,7 @@ This extension isn't in the Chrome Web Store or Firefox Add-ons yet, so you inst
    - **Edge:** type `edge://extensions` and press Enter
 2. Turn on **Developer mode** — the switch in the **top-right** corner.
 3. Click the **Load unpacked** button (top-left).
-4. A file picker opens. Go into the folder you unzipped and select the **`extension`** folder, then click **Select / Open**.
-   - ⚠️ Pick the folder *named* `extension`, not the outer `insta-recommendation-blocker-main` folder.
+4. A file picker opens. Select the **`instagram-recommendation-blocker`** folder you just unzipped — it's the folder that contains a file called `manifest.json` — then click **Select / Open**.
 5. **Instagram Recommendation Blocker** now appears in your list — you're done!
 6. *(Recommended)* Click the puzzle-piece 🧩 icon near the address bar and pin the extension so its button is always visible.
 
@@ -47,7 +46,7 @@ This extension isn't in the Chrome Web Store or Firefox Add-ons yet, so you inst
 
 1. Open a new tab, type `about:debugging#/runtime/this-firefox` in the address bar, and press Enter.
 2. Click **Load Temporary Add-on…**.
-3. Go into the unzipped folder, open the **`extension`** folder, and select the file called **`manifest.json`**.
+3. Open the **`instagram-recommendation-blocker`** folder you unzipped and select the file called **`manifest.json`**.
 
 > ⚠️ Firefox note: temporary add-ons are removed every time you fully quit Firefox. You'll need to repeat these three steps the next time you open it. (Chrome/Edge/Brave remember the extension permanently.)
 
